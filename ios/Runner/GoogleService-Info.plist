@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>85339778015-mdbbse8lck19lkfkr2et1mu6tr3iai3j.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.85339778015-mdbbse8lck19lkfkr2et1mu6tr3iai3j</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>85339778015-05nu3rjch7g3vikjkiea5c970p0t44f9.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyB-HRBxY2cE2kseb9feSloRGnHlp_9NOvo</string>
+	<key>GCM_SENDER_ID</key>
+	<string>85339778015</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.example.miniquestApp</string>
+	<key>PROJECT_ID</key>
+	<string>mini-quest-7d63b</string>
+	<key>STORAGE_BUCKET</key>
+	<string>mini-quest-7d63b.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:85339778015:ios:958afae3229c9c22def26a</string>
+</dict>
+</plist>

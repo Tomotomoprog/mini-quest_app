@@ -1,0 +1,126 @@
+{
+  "project_info": {
+    "project_number": "85339778015",
+    "project_id": "mini-quest-7d63b",
+    "storage_bucket": "mini-quest-7d63b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:85339778015:android:7a5986d9bfc49543def26a",
+        "android_client_info": {
+          "package_name": "com.example.mini_quest"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "85339778015-q48ksr4hofc709f4qt529g8bhm4dn6c8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBpED7dGgkopkmc4Z6wnjX3RLn-Q29Lffo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "85339778015-q48ksr4hofc709f4qt529g8bhm4dn6c8.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "85339778015-0bkb77okfljvbdulj907nes6t7paheua.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.miniQuest"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:85339778015:android:df08a8339582914edef26a",
+        "android_client_info": {
+          "package_name": "com.example.miniquest_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "85339778015-q48ksr4hofc709f4qt529g8bhm4dn6c8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBpED7dGgkopkmc4Z6wnjX3RLn-Q29Lffo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "85339778015-q48ksr4hofc709f4qt529g8bhm4dn6c8.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "85339778015-0bkb77okfljvbdulj907nes6t7paheua.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.miniQuest"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:85339778015:android:6a836225d56e0682def26a",
+        "android_client_info": {
+          "package_name": "com.example.miniquest_rpg"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "85339778015-05nu3rjch7g3vikjkiea5c970p0t44f9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.miniquest_rpg",
+            "certificate_hash": "cd40792f8ea2e0f412cecedafb3905c8e08d9eda"
+          }
+        },
+        {
+          "client_id": "85339778015-q48ksr4hofc709f4qt529g8bhm4dn6c8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBpED7dGgkopkmc4Z6wnjX3RLn-Q29Lffo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "85339778015-q48ksr4hofc709f4qt529g8bhm4dn6c8.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "85339778015-0bkb77okfljvbdulj907nes6t7paheua.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.miniQuest"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
