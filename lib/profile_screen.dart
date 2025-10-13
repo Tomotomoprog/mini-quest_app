@@ -1,19 +1,22 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'models/ability.dart';
 import 'models/my_quest.dart';
 import 'models/post.dart';
 import 'models/user_profile.dart';
+import 'sanctuary_screen.dart'; // SanctuaryScreenをインポート
+import 'utils/ability_service.dart';
+import 'utils/progression.dart';
 
-// メインのプロフィール画面
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final String userId;
+  const ProfileScreen({super.key, required this.userId});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-// ▼▼▼ ここに `with SingleTickerProviderStateMixin` を追加しました ▼▼▼
 class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
@@ -30,202 +33,301 @@ class _ProfileScreenState extends State<ProfileScreen>
     super.dispose();
   }
 
-  Future<void> _signOut() async {
-    await FirebaseAuth.instance.signOut();
-  }
-
-  // レベル計算ロジック
-  int _computeLevel(int xp) => (xp / 100).floor() + 1;
+  bool get _isMyProfile =>
+      FirebaseAuth.instance.currentUser?.uid == widget.userId;
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      return const Scaffold(body: Center(child: Text('ログインしていません。')));
-    }
-
     return Scaffold(
-      // NestedScrollViewを使うことで、プロフィールヘッダーをスクロールすると一緒に隠れるAppBarを実現
-      body: NestedScrollView(
-        headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
-          return <Widget>[
-            SliverAppBar(
-              title: const Text('プロフィール'),
-              pinned: true,
-              floating: true,
-              actions: [
-                IconButton(icon: const Icon(Icons.logout), onPressed: _signOut)
-              ],
-              bottom: TabBar(
-                controller: _tabController,
-                tabs: const [
-                  Tab(text: 'ステータス'),
-                  Tab(text: '投稿'),
-                  Tab(text: 'マイクエスト'),
-                ],
-              ),
-            ),
-          ];
-        },
-        body: StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
+      backgroundColor: Theme.of(context).colorScheme.background,
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.userId)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.data!.exists) {
+            return const Center(child: Text('ユーザーが見つかりません。'));
+          }
 
-            UserProfile userProfile;
-            if (!snapshot.data!.exists) {
-              // データがない場合のデフォルト値
-              userProfile = UserProfile(
-                  uid: user.uid,
-                  displayName: user.displayName,
-                  photoURL: user.photoURL,
-                  xp: 0,
-                  stats: UserStats());
-            } else {
-              userProfile = UserProfile.fromFirestore(snapshot.data!);
-            }
+          final userProfile = UserProfile.fromFirestore(snapshot.data!);
+          final progress = computeXpProgress(userProfile.xp);
+          final level = progress['level']!;
+          final xpInCurrentLevel = progress['xpInCurrentLevel']!;
+          final xpNeededForNextLevel = progress['xpNeededForNextLevel']!;
+          final classInfo = computeClass(userProfile.stats, level);
+          final abilities =
+              AbilityService.getAbilitiesForClass(classInfo.title);
 
-            final level = _computeLevel(userProfile.xp);
-            final xpInCurrentLevel = userProfile.xp - ((level - 1) * 100);
-            final progressPercentage = xpInCurrentLevel / 100.0;
-
-            return TabBarView(
+          return NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) {
+              return [
+                SliverAppBar(
+                  title: const Text('プロフィール'),
+                  pinned: true,
+                  floating: true,
+                  forceElevated: innerBoxIsScrolled,
+                  actions: [
+                    if (_isMyProfile)
+                      IconButton(
+                        icon: const Icon(Icons.logout),
+                        onPressed: () => FirebaseAuth.instance.signOut(),
+                      )
+                  ],
+                  expandedHeight: 300.0,
+                  flexibleSpace: FlexibleSpaceBar(
+                    background: _ProfileHeader(
+                      userProfile: userProfile,
+                      level: level,
+                      classInfo: classInfo,
+                      xpInLevel: xpInCurrentLevel,
+                      xpNeeded: xpNeededForNextLevel,
+                    ),
+                  ),
+                  bottom: TabBar(
+                    controller: _tabController,
+                    tabs: const [
+                      Tab(text: 'ステータス'),
+                      Tab(text: '投稿'),
+                      Tab(text: 'マイクエスト'),
+                    ],
+                  ),
+                ),
+              ];
+            },
+            body: TabBarView(
               controller: _tabController,
               children: [
-                // 各タブの中身
                 _ProfileStatsTab(
-                    userProfile: userProfile,
-                    level: level,
-                    progress: progressPercentage,
-                    xpInLevel: xpInCurrentLevel),
-                _ProfilePostsTab(userId: user.uid),
-                _ProfileMyQuestsTab(userId: user.uid),
+                    userProfile: userProfile, abilities: abilities),
+                _ProfilePostsTab(userId: widget.userId),
+                _ProfileMyQuestsTab(userId: widget.userId),
               ],
-            );
-          },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ProfileHeader extends StatelessWidget {
+  final UserProfile userProfile;
+  final int level;
+  final ClassResult classInfo;
+  final int xpInLevel;
+  final int xpNeeded;
+
+  const _ProfileHeader({
+    required this.userProfile,
+    required this.level,
+    required this.classInfo,
+    required this.xpInLevel,
+    required this.xpNeeded,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.all(0),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 80, 16, 16),
+        child: Column(
+          children: [
+            CircleAvatar(
+              radius: 40,
+              backgroundImage: userProfile.photoURL != null
+                  ? NetworkImage(userProfile.photoURL!)
+                  : null,
+              child: userProfile.photoURL == null
+                  ? const Icon(Icons.person, size: 40)
+                  : null,
+            ),
+            const SizedBox(height: 12),
+            Text(userProfile.displayName ?? '名無しさん',
+                style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                Column(
+                  children: [
+                    Text('レベル', style: Theme.of(context).textTheme.bodySmall),
+                    Text(level.toString(),
+                        style: Theme.of(context).textTheme.titleLarge),
+                  ],
+                ),
+                Column(
+                  children: [
+                    Text('クラス', style: Theme.of(context).textTheme.bodySmall),
+                    Text(classInfo.title,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: Theme.of(context).colorScheme.primary)),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _ProgressBar(
+              value: xpInLevel,
+              max: xpNeeded,
+              label: '次のレベルまで',
+              color: Colors.amber,
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-// --- ステータスタブ ---
 class _ProfileStatsTab extends StatelessWidget {
   final UserProfile userProfile;
-  final int level;
-  final double progress;
-  final int xpInLevel;
+  final List<Ability> abilities;
 
-  const _ProfileStatsTab(
-      {required this.userProfile,
-      required this.level,
-      required this.progress,
-      required this.xpInLevel});
+  const _ProfileStatsTab({required this.userProfile, required this.abilities});
+
+  static const categoryColors = {
+    'Life': Color(0xFF22C55E),
+    'Study': Color(0xFF3B82F6),
+    'Physical': Color(0xFFEF4444),
+    'Social': Color(0xFFEC4899),
+    'Creative': Color(0xFFA855F7),
+    'Mental': Color(0xFF6366F1),
+  };
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // プロフィールヘッダー
-          CircleAvatar(
-            radius: 40,
-            backgroundImage: userProfile.photoURL != null
-                ? NetworkImage(userProfile.photoURL!)
-                : null,
-            child: userProfile.photoURL == null
-                ? const Icon(Icons.person, size: 40)
-                : null,
+          // ▼▼▼ サンクチュアリへのボタンを追加 ▼▼▼
+          ElevatedButton.icon(
+            icon: const Icon(Icons.fort),
+            label: const Text('サンクチュアリへ'),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (context) => const SanctuaryScreen()),
+              );
+            },
           ),
-          const SizedBox(height: 12),
-          Text(userProfile.displayName ?? '名無しさん',
-              style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 24),
-          // レベルと進捗
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Level $level',
-                  style: Theme.of(context).textTheme.titleLarge),
-              Text('$xpInLevel / 100 XP'),
-            ],
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  _ProgressBar(
+                      label: 'Life',
+                      value: userProfile.stats.life,
+                      max: 10,
+                      color: categoryColors['Life']!),
+                  const SizedBox(height: 16),
+                  _ProgressBar(
+                      label: 'Study',
+                      value: userProfile.stats.study,
+                      max: 10,
+                      color: categoryColors['Study']!),
+                  const SizedBox(height: 16),
+                  _ProgressBar(
+                      label: 'Physical',
+                      value: userProfile.stats.physical,
+                      max: 10,
+                      color: categoryColors['Physical']!),
+                  const SizedBox(height: 16),
+                  _ProgressBar(
+                      label: 'Social',
+                      value: userProfile.stats.social,
+                      max: 10,
+                      color: categoryColors['Social']!),
+                  const SizedBox(height: 16),
+                  _ProgressBar(
+                      label: 'Creative',
+                      value: userProfile.stats.creative,
+                      max: 10,
+                      color: categoryColors['Creative']!),
+                  const SizedBox(height: 16),
+                  _ProgressBar(
+                      label: 'Mental',
+                      value: userProfile.stats.mental,
+                      max: 10,
+                      color: categoryColors['Mental']!),
+                ],
+              ),
+            ),
           ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-              value: progress,
-              minHeight: 8,
-              borderRadius: BorderRadius.circular(4)),
-          const SizedBox(height: 24),
-          const Divider(),
-          const SizedBox(height: 16),
-          // 各ステータス
-          _StatRow(
-              label: 'Life',
-              value: userProfile.stats.life,
-              color: Colors.green),
-          _StatRow(
-              label: 'Study',
-              value: userProfile.stats.study,
-              color: Colors.blue),
-          _StatRow(
-              label: 'Physical',
-              value: userProfile.stats.physical,
-              color: Colors.red),
-          _StatRow(
-              label: 'Social',
-              value: userProfile.stats.social,
-              color: Colors.pink),
-          _StatRow(
-              label: 'Creative',
-              value: userProfile.stats.creative,
-              color: Colors.purple),
-          _StatRow(
-              label: 'Mental',
-              value: userProfile.stats.mental,
-              color: Colors.indigo),
+          if (abilities.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('アビリティ', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  ...abilities.map((ability) => Card(
+                        child: ListTile(
+                          leading: Icon(ability.icon,
+                              color: Theme.of(context).colorScheme.primary),
+                          title: Text(ability.name,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text(ability.description),
+                        ),
+                      )),
+                ],
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
-class _StatRow extends StatelessWidget {
+class _ProgressBar extends StatelessWidget {
   final String label;
   final int value;
+  final int max;
   final Color color;
-  const _StatRow(
-      {required this.label, required this.value, required this.color});
+  const _ProgressBar(
+      {required this.label,
+      required this.value,
+      required this.max,
+      required this.color});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        children: [
-          Icon(Icons.shield, color: color),
-          const SizedBox(width: 16),
-          Text(label, style: const TextStyle(fontSize: 16)),
-          const Spacer(),
-          Text(value.toString(),
-              style:
-                  const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        ],
-      ),
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text('$value / $max'),
+          ],
+        ),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+          value: value / max,
+          minHeight: 8,
+          borderRadius: BorderRadius.circular(4),
+          backgroundColor: color.withOpacity(0.2),
+          valueColor: AlwaysStoppedAnimation<Color>(color),
+        ),
+      ],
     );
   }
 }
 
-// --- 自分の投稿一覧タブ ---
 class _ProfilePostsTab extends StatelessWidget {
   final String userId;
   const _ProfilePostsTab({required this.userId});
-
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
@@ -239,7 +341,6 @@ class _ProfilePostsTab extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         if (snapshot.data!.docs.isEmpty)
           return const Center(child: Text('まだ投稿がありません。'));
-
         return ListView.builder(
           itemCount: snapshot.data!.docs.length,
           itemBuilder: (context, index) {
@@ -255,11 +356,9 @@ class _ProfilePostsTab extends StatelessWidget {
   }
 }
 
-// --- 自分のマイクエスト一覧タブ ---
 class _ProfileMyQuestsTab extends StatelessWidget {
   final String userId;
   const _ProfileMyQuestsTab({required this.userId});
-
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
@@ -273,7 +372,6 @@ class _ProfileMyQuestsTab extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         if (snapshot.data!.docs.isEmpty)
           return const Center(child: Text('マイクエストはまだありません。'));
-
         return ListView.builder(
           itemCount: snapshot.data!.docs.length,
           itemBuilder: (context, index) {

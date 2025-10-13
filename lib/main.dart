@@ -1,8 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
-// 必要な画面をすべてインポートします
 import 'auth_gate.dart';
 import 'firebase_options.dart';
 import 'friends_screen.dart';
@@ -11,6 +12,8 @@ import 'my_quests_screen.dart';
 import 'post_screen.dart';
 import 'profile_screen.dart';
 import 'timeline_screen.dart';
+import 'utils/quest_service.dart';
+// sanctuary_screen.dart のインポートはここでは不要になります
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,10 +28,35 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final seedColor = const Color(0xFF0EA5E9);
+    final textTheme = GoogleFonts.interTextTheme(Theme.of(context).textTheme);
+
     return MaterialApp(
+      title: 'MiniQuest',
       theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+            seedColor: seedColor, background: const Color(0xFFF8FAFC)),
+        textTheme: textTheme,
+        appBarTheme: AppBarTheme(
+          backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.8),
+          foregroundColor: const Color(0xFF0f172a),
+          elevation: 0,
+          titleTextStyle:
+              textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        cardTheme: CardThemeData(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12.0),
+            side: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+        ),
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          selectedItemColor: Colors.orange,
+          selectedLabelStyle: TextStyle(fontSize: 12.0),
+          unselectedLabelStyle: TextStyle(fontSize: 12.0),
+        ),
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.orange),
       ),
       home: const AuthGate(),
     );
@@ -44,15 +72,23 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  List<Widget> _widgetOptions = [];
 
-  // `const`キーワードを削除しました
-  static final List<Widget> _widgetOptions = <Widget>[
-    const QuestListScreen(),
-    const TimelineScreen(),
-    const MyQuestsScreen(),
-    const FriendsScreen(),
-    const ProfileScreen(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId != null) {
+      // ▼▼▼ 画面リストを5つに戻します ▼▼▼
+      _widgetOptions = <Widget>[
+        const QuestListScreen(),
+        const TimelineScreen(),
+        const MyQuestsScreen(),
+        const FriendsScreen(),
+        ProfileScreen(userId: currentUserId),
+      ];
+    }
+  }
 
   void _onItemTapped(int index) {
     setState(() {
@@ -62,90 +98,93 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_widgetOptions.isEmpty) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     return Scaffold(
-      body: Center(
-        child: _widgetOptions.elementAt(_selectedIndex),
-      ),
+      body: Center(child: _widgetOptions.elementAt(_selectedIndex)),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
+        // ▼▼▼ ナビゲーションバーのボタンも5つに戻します ▼▼▼
         items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'ホーム',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.timeline),
-            label: 'タイムライン',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.flag),
-            label: 'マイクエスト',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people),
-            label: 'フレンド',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'プロフィール',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'ホーム'),
+          BottomNavigationBarItem(icon: Icon(Icons.timeline), label: 'タイムライン'),
+          BottomNavigationBarItem(icon: Icon(Icons.flag), label: 'マイクエスト'),
+          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'フレンド'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'プロフィール'),
         ],
         currentIndex: _selectedIndex,
-        selectedItemColor: Colors.orange,
         onTap: _onItemTapped,
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (context) => const PostScreen()),
-          );
-        },
-        tooltip: '新しい投稿を作成',
-        child: const Icon(Icons.add),
       ),
     );
   }
 }
 
-// QuestListScreenは変更なし
-class QuestListScreen extends StatelessWidget {
+// (QuestListScreenは変更なし)
+class QuestListScreen extends StatefulWidget {
   const QuestListScreen({super.key});
+  @override
+  State<QuestListScreen> createState() => _QuestListScreenState();
+}
+
+class _QuestListScreenState extends State<QuestListScreen> {
+  late Future<List<Quest>> _dailyQuestsFuture;
+  @override
+  void initState() {
+    super.initState();
+    _dailyQuestsFuture = QuestService.getDailyQuests();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('今日のクエスト'),
-      ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('quests').snapshots(),
+      appBar: AppBar(title: const Text('今日のクエスト')),
+      body: FutureBuilder<List<Quest>>(
+        future: _dailyQuestsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return const Center(child: Text('エラーが発生しました'));
+            return const Center(child: Text('クエストの取得に失敗しました'));
           }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('クエストがありません'));
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('今日のクエストはありません'));
           }
-
-          final quests = snapshot.data!.docs
-              .map((doc) => Quest.fromFirestore(doc))
-              .toList();
-
+          final quests = snapshot.data!;
           return ListView.builder(
+            padding: const EdgeInsets.all(8.0),
             itemCount: quests.length,
             itemBuilder: (context, index) {
               final quest = quests[index];
-              return ListTile(
-                leading: const Icon(Icons.check_circle_outline,
-                    color: Colors.orange),
-                title: Text(quest.title),
-                subtitle: Text(quest.description),
-                trailing: Text(
-                  '#${quest.tag}',
-                  style: const TextStyle(color: Colors.blueAccent),
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 6.0),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('#${quest.tag}',
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Text(quest.title,
+                          style: Theme.of(context).textTheme.titleLarge),
+                      const SizedBox(height: 4),
+                      Text(quest.description,
+                          style: Theme.of(context).textTheme.bodyMedium),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(context).push(MaterialPageRoute(
+                              builder: (context) =>
+                                  PostScreen(dailyQuest: quest)));
+                        },
+                        child: const Text('達成を投稿'),
+                      )
+                    ],
+                  ),
                 ),
               );
             },

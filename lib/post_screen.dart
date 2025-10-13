@@ -5,11 +5,13 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'models/my_quest.dart';
-import 'models/user_profile.dart'; // UserProfileモデルをインポート
-import 'utils/progression.dart'; // progressionロジックをインポート
+import 'models/quest.dart';
+import 'models/user_profile.dart';
+import 'utils/progression.dart';
 
 class PostScreen extends StatefulWidget {
-  const PostScreen({super.key});
+  final Quest? dailyQuest;
+  const PostScreen({super.key, this.dailyQuest});
 
   @override
   State<PostScreen> createState() => _PostScreenState();
@@ -51,7 +53,6 @@ class _PostScreenState extends State<PostScreen> {
     }
   }
 
-  // 投稿処理を大幅に更新
   Future<void> _addPost() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -61,7 +62,6 @@ class _PostScreenState extends State<PostScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // 投稿前のユーザー情報を取得
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -69,13 +69,11 @@ class _PostScreenState extends State<PostScreen> {
       final userProfile = userDoc.exists
           ? UserProfile.fromFirestore(userDoc)
           : UserProfile(uid: user.uid, xp: 0, stats: UserStats());
-
       final level = computeLevel(userProfile.xp);
       final classInfo = computeClass(userProfile.stats, level);
 
-      // マイクエストの情報を取得
       String? myQuestTitle;
-      String? questCategory;
+      String? questCategory = widget.dailyQuest?.category;
       if (_selectedMyQuestId != null) {
         final quest =
             _activeQuests.firstWhere((q) => q.id == _selectedMyQuestId);
@@ -83,7 +81,6 @@ class _PostScreenState extends State<PostScreen> {
         questCategory = quest.category;
       }
 
-      // 画像をアップロード
       String? photoURL;
       if (_imageFile != null) {
         final storageRef = FirebaseStorage.instance.ref().child(
@@ -92,7 +89,6 @@ class _PostScreenState extends State<PostScreen> {
         photoURL = await storageRef.getDownloadURL();
       }
 
-      // 投稿データを作成
       await FirebaseFirestore.instance.collection('posts').add({
         'uid': user.uid,
         'userName': user.displayName ?? '名無しさん',
@@ -106,10 +102,12 @@ class _PostScreenState extends State<PostScreen> {
         'commentCount': 0,
         'myQuestId': _selectedMyQuestId,
         'myQuestTitle': myQuestTitle,
+        'questId': widget.dailyQuest?.id,
+        'questTitle': widget.dailyQuest?.title,
         'questCategory': questCategory,
+        'isBlessed': false, // isBlessedの初期値を追加
       });
 
-      // ▼▼▼ ユーザーのXPとStatsを更新する処理 ▼▼▼
       final userRef =
           FirebaseFirestore.instance.collection('users').doc(user.uid);
       final updates = <String, dynamic>{'xp': FieldValue.increment(10)};
@@ -132,25 +130,32 @@ class _PostScreenState extends State<PostScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // (UI部分は変更なし)
     return Scaffold(
       appBar: AppBar(title: const Text('達成を投稿')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (_imageFile != null)
-              Stack(
-                alignment: Alignment.topRight,
-                children: [
-                  Image.file(_imageFile!, height: 200),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => setState(() => _imageFile = null),
-                  )
-                ],
+            if (widget.dailyQuest != null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.star, color: Colors.amber),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: Text(widget.dailyQuest!.title,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold))),
+                  ],
+                ),
               ),
-            const SizedBox(height: 16),
             TextField(
               controller: _textController,
               decoration: const InputDecoration(
@@ -164,12 +169,16 @@ class _PostScreenState extends State<PostScreen> {
                 decoration: const InputDecoration(
                     labelText: 'マイクエストに進捗を記録', border: OutlineInputBorder()),
                 hint: const Text('（紐付けない）'),
-                items: _activeQuests
-                    .map((quest) => DropdownMenuItem(
-                        value: quest.id, child: Text(quest.title)))
-                    .toList(),
-                onChanged: (value) =>
-                    setState(() => _selectedMyQuestId = value),
+                isExpanded: true,
+                items: _activeQuests.map((MyQuest quest) {
+                  return DropdownMenuItem<String>(
+                    value: quest.id,
+                    child: Text(quest.title, overflow: TextOverflow.ellipsis),
+                  );
+                }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() => _selectedMyQuestId = newValue);
+                },
               ),
             const SizedBox(height: 16),
             Row(

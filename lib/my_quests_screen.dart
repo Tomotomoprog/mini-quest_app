@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'models/my_quest.dart';
 import 'create_my_quest_screen.dart';
+import 'my_quest_detail_screen.dart';
 
 class MyQuestsScreen extends StatelessWidget {
   const MyQuestsScreen({super.key});
@@ -28,21 +29,9 @@ class MyQuestsScreen extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-
-          // --- ここからが変更箇所 ---
-          // エラーが発生した場合、その内容を画面に表示する
           if (snapshot.hasError) {
-            // デバッグコンソールにもエラーを出力する
-            print(' Firestore Error: ${snapshot.error}');
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text('エラーが発生しました:\n\n${snapshot.error}'),
-              ),
-            );
+            return const Center(child: Text('エラーが発生しました'));
           }
-          // --- ここまでが変更箇所 ---
-
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return const Center(
               child: Padding(
@@ -54,25 +43,32 @@ class MyQuestsScreen extends StatelessWidget {
               ),
             );
           }
-
           final myQuests = snapshot.data!.docs
               .map((doc) => MyQuest.fromFirestore(doc))
               .toList();
-
           return ListView.builder(
             itemCount: myQuests.length,
             itemBuilder: (context, index) {
               final quest = myQuests[index];
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: ListTile(
-                  title: Text(quest.title),
-                  subtitle: Text('${quest.startDate} 〜 ${quest.endDate}'),
-                  trailing: Chip(
-                    label: Text(quest.status == 'active' ? '挑戦中' : '達成済み'),
-                    backgroundColor: quest.status == 'active'
-                        ? Colors.blue.shade100
-                        : Colors.green.shade100,
+                child: InkWell(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => MyQuestDetailScreen(quest: quest),
+                      ),
+                    );
+                  },
+                  child: ListTile(
+                    title: Text(quest.title),
+                    subtitle: Text('${quest.startDate} 〜 ${quest.endDate}'),
+                    trailing: Chip(
+                      label: Text(quest.status == 'active' ? '挑戦中' : '達成済み'),
+                      backgroundColor: quest.status == 'active'
+                          ? Colors.blue.shade100
+                          : Colors.green.shade100,
+                    ),
                   ),
                 ),
               );
@@ -81,14 +77,15 @@ class MyQuestsScreen extends StatelessWidget {
         },
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: null, // アニメーションを無効化
         onPressed: () {
           Navigator.of(context).push(
             MaterialPageRoute(
                 builder: (context) => const CreateMyQuestScreen()),
           );
         },
-        child: const Icon(Icons.add),
         tooltip: '新しいマイクエストを作成',
+        child: const Icon(Icons.add),
       ),
     );
   }

@@ -10,9 +10,14 @@ class Post {
   final String userName;
   final String? userAvatar;
   final int likeCount;
+  final int commentCount;
   final String? photoURL;
-  final int userLevel; // 追加
-  final String userClass; // 追加
+  final int userLevel;
+  final String userClass;
+  final String? questId;
+  final String? questTitle;
+  final String? questCategory;
+  final bool isBlessed; // 追加
 
   Post({
     required this.id,
@@ -24,9 +29,14 @@ class Post {
     required this.userName,
     this.userAvatar,
     required this.likeCount,
+    required this.commentCount,
     this.photoURL,
     required this.userLevel,
     required this.userClass,
+    this.questId,
+    this.questTitle,
+    this.questCategory,
+    required this.isBlessed, // 追加
   });
 
   factory Post.fromFirestore(DocumentSnapshot doc) {
@@ -41,9 +51,14 @@ class Post {
       userName: data['userName'] ?? '名無しさん',
       userAvatar: data['userAvatar'],
       likeCount: data['likeCount'] ?? 0,
+      commentCount: data['commentCount'] ?? 0,
       photoURL: data['photoURL'],
-      userLevel: data['userLevel'] ?? 1, // 追加
-      userClass: data['userClass'] ?? '見習い', // 追加
+      userLevel: data['userLevel'] ?? 1,
+      userClass: data['userClass'] ?? '見習い',
+      questId: data['questId'],
+      questTitle: data['questTitle'],
+      questCategory: data['questCategory'],
+      isBlessed: data['isBlessed'] ?? false, // 追加
     );
   }
 }
