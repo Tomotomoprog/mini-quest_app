@@ -1,6 +1,34 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 
-// Webアプリの progression.ts を参考にしたUserStatsの型定義
+class Avatar {
+  final String hairStyle;
+  final Color skinColor;
+  final Color hairColor;
+
+  Avatar({
+    required this.hairStyle,
+    required this.skinColor,
+    required this.hairColor,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'hairStyle': hairStyle,
+      'skinColor': skinColor.value,
+      'hairColor': hairColor.value,
+    };
+  }
+
+  factory Avatar.fromMap(Map<String, dynamic> map) {
+    return Avatar(
+      hairStyle: map['hairStyle'] ?? 'default',
+      skinColor: Color(map['skinColor'] ?? Colors.orange.shade200.value),
+      hairColor: Color(map['hairColor'] ?? Colors.brown.shade800.value),
+    );
+  }
+}
+
 class UserStats {
   final int life;
   final int study;
@@ -35,14 +63,18 @@ class UserProfile {
   final String? displayName;
   final String? photoURL;
   final int xp;
-  final UserStats stats; // 追加
+  final UserStats stats;
+  final Avatar? avatar;
+  final Map<String, String> equippedItems; // ▼▼▼ この行を追加 ▼▼▼
 
   UserProfile({
     required this.uid,
     this.displayName,
     this.photoURL,
     required this.xp,
-    required this.stats, // 追加
+    required this.stats,
+    this.avatar,
+    required this.equippedItems, // ▼▼▼ この行を追加 ▼▼▼
   });
 
   factory UserProfile.fromFirestore(DocumentSnapshot doc) {
@@ -52,7 +84,11 @@ class UserProfile {
       displayName: data['displayName'],
       photoURL: data['photoURL'],
       xp: data['xp'] ?? 0,
-      stats: UserStats.fromMap(data['stats'] ?? {}), // 追加
+      stats: UserStats.fromMap(data['stats'] ?? {}),
+      avatar:
+          data.containsKey('avatar') ? Avatar.fromMap(data['avatar']) : null,
+      // ▼▼▼ この行を追加 ▼▼▼
+      equippedItems: Map<String, String>.from(data['equippedItems'] ?? {}),
     );
   }
 }

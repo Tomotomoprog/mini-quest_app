@@ -1,15 +1,14 @@
 import '../models/user_profile.dart';
 
-class ClassResult {
+class JobResult {
   final String title;
-  final String tier;
-  final List<String> pair;
 
-  ClassResult({required this.title, required this.tier, required this.pair});
+  JobResult({required this.title});
 }
 
 // ユーザーのXPからレベルを計算する
 int computeLevel(int xp) {
+  // 1レベルアップに必要なXPは100
   return (xp / 100).floor() + 1;
 }
 
@@ -27,8 +26,13 @@ Map<String, int> computeXpProgress(int xp) {
   };
 }
 
-// ユーザーのステータスとレベルからクラス（ジョブ）を計算する
-ClassResult computeClass(UserStats stats, int level) {
+// ユーザーのステータスとレベルから一次職（ジョブ）を計算する
+JobResult computeJob(UserStats stats, int level) {
+  // 設計案の通り、レベル10未満は「見習い」
+  if (level < 10) {
+    return JobResult(title: "見習い");
+  }
+
   final statsMap = {
     'Creative': stats.creative,
     'Life': stats.life,
@@ -38,57 +42,48 @@ ClassResult computeClass(UserStats stats, int level) {
     'Study': stats.study,
   };
 
+  // 経験値が高い順にソート
   final sortedEntries = statsMap.entries.toList()
     ..sort((a, b) => b.value.compareTo(a.value));
 
-  final p1 = sortedEntries[0].key;
-  final p2 = sortedEntries[1].key;
+  final top1Stat = sortedEntries[0].key;
+  final top1Value = sortedEntries[0].value;
+  final top2Stat = sortedEntries[1].key;
+  final top2Value = sortedEntries[1].value;
 
-  final String tier;
-  if (level <= 30) {
-    tier = "初級";
-  } else if (level <= 70) {
-    tier = "中級";
-  } else {
-    tier = "上級";
+  // 2つのステータスが「バランス良く高い」と判定するための閾値（2番目が1番目の70%以上）
+  const balanceThreshold = 0.7;
+
+  // 設計案に基づき、バランス型のジョブから先に判定する
+  // 魔術師: StudyとMentalがバランス良く高い
+  if ((top1Stat == 'Study' && top2Stat == 'Mental' ||
+          top1Stat == 'Mental' && top2Stat == 'Study') &&
+      (top2Value >= top1Value * balanceThreshold)) {
+    return JobResult(title: "魔術師");
+  }
+  // 治癒士: SocialとLifeがバランス良く高い
+  if ((top1Stat == 'Social' && top2Stat == 'Life' ||
+          top1Stat == 'Life' && top2Stat == 'Social') &&
+      (top2Value >= top1Value * balanceThreshold)) {
+    return JobResult(title: "治癒士");
+  }
+  // 冒険家: LifeとPhysicalがバランス良く高い
+  if ((top1Stat == 'Life' && top2Stat == 'Physical' ||
+          top1Stat == 'Physical' && top2Stat == 'Life') &&
+      (top2Value >= top1Value * balanceThreshold)) {
+    return JobResult(title: "冒険家");
   }
 
-  final title = _mapClassTitle(p1, p2, tier);
-  return ClassResult(title: title, tier: tier, pair: [p1, p2]);
-}
+  // 特化型のジョブを判定
+  // 戦士: Physicalが最も高い
+  if (top1Stat == 'Physical') {
+    return JobResult(title: "戦士");
+  }
+  // 芸術家: Creativeが最も高い
+  if (top1Stat == 'Creative') {
+    return JobResult(title: "芸術家");
+  }
 
-String _mapClassTitle(String a, String b, String tier) {
-  final pair = _orderPair(a, b);
-  final key = '${pair[0]}-${pair[1]}';
-
-  const classTable = {
-    "Creative-Life": {"初級": "アイデア生活者", "中級": "ライフデザイナー", "上級": "革新ライフメーカー"},
-    "Creative-Mental": {"初級": "夢見る人", "中級": "創造探求者", "上級": "哲学的クリエイター"},
-    "Creative-Physical": {"初級": "元気クリエイター", "中級": "身体表現者", "上級": "究極アーティスト"},
-    "Creative-Social": {
-      "初級": "おしゃべりクリエイター",
-      "中級": "共感デザイナー",
-      "上級": "インスパイアリーダー"
-    },
-    "Creative-Study": {"初級": "ひらめき学習者", "中級": "発明家", "上級": "革命的イノベーター"},
-    "Life-Mental": {"初級": "心整え人", "中級": "マインドガイド", "上級": "生活賢者"},
-    "Life-Physical": {"初級": "元気生活者", "中級": "健康探求者", "上級": "究極フィットライフ"},
-    "Life-Social": {"初級": "世話好きフレンド", "中級": "コミュニティ支援者", "上級": "暮らしのリーダー"},
-    "Life-Study": {"初級": "生活学習者", "中級": "知識実践家", "上級": "暮らしの賢者"},
-    "Mental-Physical": {"初級": "ストイック挑戦者", "中級": "精神戦士", "上級": "鉄人賢者"},
-    "Mental-Social": {"初級": "癒しフレンド", "中級": "心の相談役", "上級": "共感賢者"},
-    "Mental-Study": {"初級": "集中学習者", "中級": "思考探求者", "上級": "叡智の賢者"},
-    "Physical-Social": {"初級": "スポーツ仲間", "中級": "闘志リーダー", "上級": "闘魂カリスマ"},
-    "Physical-Study": {"初級": "学習マッチョ", "中級": "筋肉教授", "上級": "最強博士"},
-    "Social-Study": {"初級": "勉強仲間", "中級": "知識シェアラー", "上級": "賢者リーダー"},
-  };
-
-  return classTable[key]?[tier] ?? "見習い";
-}
-
-List<String> _orderPair(String a, String b) {
-  const order = ["Creative", "Life", "Mental", "Physical", "Social", "Study"];
-  final pair = [a, b];
-  pair.sort((val1, val2) => order.indexOf(val1).compareTo(order.indexOf(val2)));
-  return pair;
+  // どの条件にも当てはまらない場合のデフォルト
+  return JobResult(title: "見習い");
 }

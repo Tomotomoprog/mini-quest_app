@@ -13,7 +13,6 @@ import 'post_screen.dart';
 import 'profile_screen.dart';
 import 'timeline_screen.dart';
 import 'utils/quest_service.dart';
-// sanctuary_screen.dart のインポートはここでは不要になります
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -79,7 +78,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId != null) {
-      // ▼▼▼ 画面リストを5つに戻します ▼▼▼
       _widgetOptions = <Widget>[
         const QuestListScreen(),
         const TimelineScreen(),
@@ -105,7 +103,6 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Center(child: _widgetOptions.elementAt(_selectedIndex)),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        // ▼▼▼ ナビゲーションバーのボタンも5つに戻します ▼▼▼
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'ホーム'),
           BottomNavigationBarItem(icon: Icon(Icons.timeline), label: 'タイムライン'),
@@ -120,7 +117,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// (QuestListScreenは変更なし)
 class QuestListScreen extends StatefulWidget {
   const QuestListScreen({super.key});
   @override

@@ -5,8 +5,10 @@ import 'package:intl/intl.dart';
 import 'models/post.dart';
 import 'comment_screen.dart';
 import 'profile_screen.dart';
-import 'models/user_profile.dart'; // UserProfileモデルをインポート
-import 'utils/progression.dart'; // progressionロジックをインポート
+import 'models/user_profile.dart';
+import 'utils/ability_service.dart';
+import 'utils/progression.dart';
+import 'models/ability.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -18,6 +20,11 @@ class TimelineScreen extends StatefulWidget {
 class _TimelineScreenState extends State<TimelineScreen> {
   Set<String> _likedPostIds = {};
   UserProfile? _currentUserProfile;
+  JobResult? _myJobInfo;
+  List<Ability> _myAbilities = [];
+
+  // どの投稿にどのアビリティを使ったかを管理するMap
+  final Map<String, String> _usedAbilitiesOnPosts = {};
 
   @override
   void initState() {
@@ -29,38 +36,48 @@ class _TimelineScreenState extends State<TimelineScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // 自分の「いいね」とプロフィール情報を並行して取得
-    await Future.wait([
-      FirebaseFirestore.instance
-          .collectionGroup('likes')
-          .where('uid', isEqualTo: user.uid)
-          .get()
-          .then((snapshot) {
-        if (mounted)
-          setState(() => _likedPostIds = snapshot.docs
-              .map((doc) => doc.reference.parent.parent!.id)
-              .toSet());
-      }),
-      FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get()
-          .then((snapshot) {
-        if (mounted && snapshot.exists)
-          setState(
-              () => _currentUserProfile = UserProfile.fromFirestore(snapshot));
-      }),
-    ]);
+    final userDocFuture =
+        FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    final likesFuture = FirebaseFirestore.instance
+        .collectionGroup('likes')
+        .where('uid', isEqualTo: user.uid)
+        .get();
+
+    final responses = await Future.wait([userDocFuture, likesFuture]);
+
+    final userDoc = responses[0] as DocumentSnapshot;
+    final likesSnapshot = responses[1] as QuerySnapshot;
+
+    if (mounted) {
+      if (userDoc.exists) {
+        final profile = UserProfile.fromFirestore(userDoc);
+        final level = computeLevel(profile.xp);
+        final jobInfo = computeJob(profile.stats, level);
+        setState(() {
+          _currentUserProfile = profile;
+          _myJobInfo = jobInfo;
+          _myAbilities = AbilityService.getAbilitiesForClass(jobInfo.title);
+        });
+      }
+      setState(() {
+        _likedPostIds = likesSnapshot.docs
+            .map((doc) => doc.reference.parent.parent!.id)
+            .toSet();
+      });
+    }
   }
 
   Future<void> _toggleLike(String postId) async {
-    // ... (この部分は変更なし)
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final postRef = FirebaseFirestore.instance.collection('posts').doc(postId);
     final likeRef = postRef.collection('likes').doc(user.uid);
     final isLiked = _likedPostIds.contains(postId);
+
     await FirebaseFirestore.instance.runTransaction((transaction) async {
+      final postSnapshot = await transaction.get(postRef);
+      if (!postSnapshot.exists) return;
+
       if (isLiked) {
         transaction.delete(likeRef);
         transaction.update(postRef, {'likeCount': FieldValue.increment(-1)});
@@ -70,6 +87,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
         transaction.update(postRef, {'likeCount': FieldValue.increment(1)});
       }
     });
+
     setState(() {
       if (isLiked) {
         _likedPostIds.remove(postId);
@@ -79,28 +97,86 @@ class _TimelineScreenState extends State<TimelineScreen> {
     });
   }
 
-  // ▼▼▼ 「祝福の風」アビリティを使用する処理 ▼▼▼
-  Future<void> _useBlessingWind(Post post) async {
-    if (post.isBlessed) return; // すでに祝福済みなら何もしない
-
-    final postRef = FirebaseFirestore.instance.collection('posts').doc(post.id);
+  // アビリティを使用する汎用的な関数
+  Future<void> _useAbility(Ability ability, Post post) async {
     final targetUserRef =
         FirebaseFirestore.instance.collection('users').doc(post.uid);
 
-    // トランザクションで安全に更新
-    await FirebaseFirestore.instance.runTransaction((transaction) async {
-      transaction.update(postRef, {'isBlessed': true});
-      // 設計案通り、XPを50%増やす（基本が10XPなので+5XP）
-      transaction.set(targetUserRef, {'xp': FieldValue.increment(5)},
-          SetOptions(merge: true));
-    });
+    switch (ability.name) {
+      case '祝福の風':
+        if (post.isBlessed) return;
+        final postRef =
+            FirebaseFirestore.instance.collection('posts').doc(post.id);
+        await FirebaseFirestore.instance.runTransaction((transaction) async {
+          transaction.update(postRef, {'isBlessed': true});
+          transaction.set(targetUserRef, {'xp': FieldValue.increment(5)},
+              SetOptions(merge: true));
+        });
+        break;
+      case '不屈の激励':
+        // TODO: 本来は相手のユーザーデータにバフをかける
+        break;
+      case '彩りの霊感':
+        // TODO: 本来は相手に素材を付与する
+        break;
+      case '発見のコンパス':
+        // TODO: 本来は相手のユーザーデータにバフをかける
+        break;
+      default:
+        return;
+    }
 
-    // TODO: アビリティに使用回数制限などを設ける場合はここに追加
+    // 画面に成功メッセージを表示
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${post.userName}に「${ability.name}」を送りました！'),
+        backgroundColor: Colors.green,
+      ),
+    );
+
+    // アビリティ使用済みとしてUIを更新
+    setState(() {
+      _usedAbilitiesOnPosts[post.id] = ability.name;
+    });
   }
 
   void _navigateToProfile(String userId) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (context) => ProfileScreen(userId: userId)),
+    );
+  }
+
+  // アビリティボタンを生成するウィジェット
+  Widget _buildAbilityButton(Post post) {
+    if (post.uid == _currentUserProfile?.uid || _myAbilities.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final ability = _myAbilities.first; // 各ジョブのアビリティは1つと仮定
+    final isAbilityUsed = _usedAbilitiesOnPosts.containsKey(post.id);
+
+    // アビリティごとの特殊な状態を判定
+    bool isDisabled =
+        isAbilityUsed || (ability.name == '祝福の風' && post.isBlessed);
+    String buttonText = isAbilityUsed ? '使用済み' : ability.name;
+    IconData buttonIcon = ability.icon;
+    Color? buttonColor;
+
+    if (ability.name == '祝福の風' && post.isBlessed) {
+      buttonText = '祝福済み';
+      buttonIcon = Icons.star;
+      buttonColor = Colors.amber;
+    }
+
+    return TextButton.icon(
+      style: TextButton.styleFrom(
+        foregroundColor: isDisabled
+            ? buttonColor ?? Colors.grey
+            : Theme.of(context).textTheme.bodySmall?.color,
+      ),
+      icon: Icon(buttonIcon),
+      label: Text(buttonText),
+      onPressed: isDisabled ? null : () => _useAbility(ability, post),
     );
   }
 
@@ -125,12 +201,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
           final posts = snapshot.data!.docs
               .map((doc) => Post.fromFirestore(doc))
               .toList();
-          final myLevel = computeLevel(_currentUserProfile!.xp);
-          final myClassInfo = computeClass(_currentUserProfile!.stats, myLevel);
-
-          // 自分がヒーラー系のクラスか判定
-          final canUseBlessing = ['Healer', 'Priest', 'Bard']
-              .any((c) => myClassInfo.title.contains(c));
 
           return ListView.builder(
             padding: const EdgeInsets.all(8.0),
@@ -138,7 +208,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
             itemBuilder: (context, index) {
               final post = posts[index];
               final isLikedByMe = _likedPostIds.contains(post.id);
-              final isMyPost = post.uid == _currentUserProfile!.uid;
 
               return Card(
                 margin: const EdgeInsets.symmetric(vertical: 6.0),
@@ -173,12 +242,22 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                         Theme.of(context).textTheme.bodySmall),
                               ],
                             ),
+                            // 魔術師の「叡智の共有」が使われている投稿にアイコンを表示
+                            if (post.isWisdomShared) ...[
+                              const Spacer(),
+                              const Icon(Icons.lightbulb,
+                                  color: Colors.deepPurple, size: 20),
+                              const SizedBox(width: 4),
+                              Text("叡智",
+                                  style: TextStyle(
+                                      color: Colors.deepPurple,
+                                      fontWeight: FontWeight.bold)),
+                            ]
                           ],
                         ),
                       ),
                       const SizedBox(height: 12),
-
-                      // (投稿内容の表示部分は変更なし)
+                      // ... (投稿内容の表示部分は変更なし)
                       if (post.myQuestTitle != null)
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -204,9 +283,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                           child: Image.network(post.photoURL!,
                               width: double.infinity, fit: BoxFit.cover),
                         ),
-
                       const Divider(height: 24),
-
                       Row(
                         children: [
                           TextButton.icon(
@@ -236,26 +313,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                                     builder: (context) =>
                                         CommentScreen(post: post))),
                           ),
-
-                          // ▼▼▼ アビリティボタンの表示ロジック ▼▼▼
-                          if (canUseBlessing && !isMyPost)
-                            TextButton.icon(
-                              style: TextButton.styleFrom(
-                                  foregroundColor: post.isBlessed
-                                      ? Colors.amber
-                                      : Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.color),
-                              icon: Icon(post.isBlessed
-                                  ? Icons.star
-                                  : Icons.star_border),
-                              label: Text(post.isBlessed ? '祝福済み' : '祝福'),
-                              onPressed: post.isBlessed
-                                  ? null
-                                  : () => _useBlessingWind(post),
-                            ),
-
+                          _buildAbilityButton(post),
                           const Spacer(),
                           Text(
                               DateFormat('MM/dd HH:mm')

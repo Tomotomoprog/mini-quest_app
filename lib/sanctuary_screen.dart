@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'models/user_profile.dart';
 import 'utils/progression.dart';
+import 'artisan_workshop_screen.dart'; // 工房画面をインポート
 
 class SanctuaryScreen extends StatelessWidget {
   const SanctuaryScreen({super.key});
@@ -16,10 +17,12 @@ class SanctuaryScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('サンクチュアリ'),
       ),
-      // ユーザー情報を一度だけ取得するためにFutureBuilderを使用
-      body: FutureBuilder<DocumentSnapshot>(
-        future:
-            FirebaseFirestore.instance.collection('users').doc(user.uid).get(),
+      body: StreamBuilder<DocumentSnapshot>(
+        // FutureBuilderからStreamBuilderに変更
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -33,7 +36,7 @@ class SanctuaryScreen extends StatelessWidget {
 
           // レベル10以上かどうかで表示を切り替える
           if (level >= 10) {
-            return const _SanctuaryUnlockedView();
+            return _SanctuaryUnlockedView(userLevel: level);
           } else {
             return _SanctuaryLockedView(currentLevel: level);
           }
@@ -45,31 +48,80 @@ class SanctuaryScreen extends StatelessWidget {
 
 // 機能が解放されている場合の表示
 class _SanctuaryUnlockedView extends StatelessWidget {
-  const _SanctuaryUnlockedView();
+  final int userLevel;
+  const _SanctuaryUnlockedView({required this.userLevel});
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.fort,
-                size: 80, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 24),
-            Text(
-              'ようこそ、あなたのサンクチュアリへ',
-              style: Theme.of(context).textTheme.headlineSmall,
-              textAlign: TextAlign.center,
+    // 設計案に基づき、各建物の解放レベルを定義
+    const workshopUnlockLevel = 15;
+
+    // 職人の工房が解放されているか
+    final isWorkshopUnlocked = userLevel >= workshopUnlockLevel;
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: ListView(
+        // 建物が増えてもスクロールできるようにListViewに変更
+        children: [
+          const Text(
+            'あなたの街を発展させましょう',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+
+          // ▼▼▼ 職人の工房カードを追加 ▼▼▼
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: isWorkshopUnlocked
+                  ? () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (context) =>
+                                const ArtisanWorkshopScreen()),
+                      );
+                    }
+                  : null, // ロック中はタップ不可
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    Icon(
+                      isWorkshopUnlocked ? Icons.construction : Icons.lock,
+                      size: 40,
+                      color: isWorkshopUnlocked
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.grey,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '職人の工房',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          Text(
+                            isWorkshopUnlocked
+                                ? '装備品（スキン）を作成できます'
+                                : 'レベル$workshopUnlockLevelで解放',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'ここはあなたの努力で発展していく街です。\nこれから建物を建てて、機能を解放していきましょう！',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+          ),
+          // ▲▲▲ 職人の工房カードを追加 ▲▲▲
+
+          // TODO: 他の建物のカードもここに追加していく
+        ],
       ),
     );
   }

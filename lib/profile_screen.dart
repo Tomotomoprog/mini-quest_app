@@ -5,9 +5,10 @@ import 'models/ability.dart';
 import 'models/my_quest.dart';
 import 'models/post.dart';
 import 'models/user_profile.dart';
-import 'sanctuary_screen.dart'; // SanctuaryScreenをインポート
+import 'sanctuary_screen.dart';
 import 'utils/ability_service.dart';
 import 'utils/progression.dart';
+import 'utils/job_skin_service.dart'; // ▼▼▼ 作成したサービスをインポート ▼▼▼
 
 class ProfileScreen extends StatefulWidget {
   final String userId;
@@ -58,9 +59,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           final level = progress['level']!;
           final xpInCurrentLevel = progress['xpInCurrentLevel']!;
           final xpNeededForNextLevel = progress['xpNeededForNextLevel']!;
-          final classInfo = computeClass(userProfile.stats, level);
-          final abilities =
-              AbilityService.getAbilitiesForClass(classInfo.title);
+          final jobInfo = computeJob(userProfile.stats, level);
+          final abilities = AbilityService.getAbilitiesForClass(jobInfo.title);
 
           return NestedScrollView(
             headerSliverBuilder: (context, innerBoxIsScrolled) {
@@ -82,7 +82,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     background: _ProfileHeader(
                       userProfile: userProfile,
                       level: level,
-                      classInfo: classInfo,
+                      jobInfo: jobInfo,
                       xpInLevel: xpInCurrentLevel,
                       xpNeeded: xpNeededForNextLevel,
                     ),
@@ -117,17 +117,73 @@ class _ProfileScreenState extends State<ProfileScreen>
 class _ProfileHeader extends StatelessWidget {
   final UserProfile userProfile;
   final int level;
-  final ClassResult classInfo;
+  final JobResult jobInfo;
   final int xpInLevel;
   final int xpNeeded;
 
   const _ProfileHeader({
     required this.userProfile,
     required this.level,
-    required this.classInfo,
+    required this.jobInfo,
     required this.xpInLevel,
     required this.xpNeeded,
   });
+
+  // ▼▼▼ アバター表示ウィジェットを大幅に更新 ▼▼▼
+  Widget _buildAvatar() {
+    if (userProfile.avatar == null) {
+      // アバターデータがない場合（古いユーザーなど）
+      return CircleAvatar(
+        radius: 40,
+        backgroundImage: userProfile.photoURL != null
+            ? NetworkImage(userProfile.photoURL!)
+            : null,
+        child: userProfile.photoURL == null
+            ? const Icon(Icons.person, size: 40)
+            : null,
+      );
+    }
+
+    // 職業スキンと装備中スキンを取得
+    final torsoSkin = JobSkinService.getTorsoSkinForJob(jobInfo.title);
+    final headSkin = userProfile.equippedItems['head']; // 'head'部位に装備しているアイテムID
+
+    return SizedBox(
+      width: 80,
+      height: 80,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // レイヤー1: 素体（肌の色）
+          // TODO: 'assets/images/avatar/body/body.png'のような画像を用意し、色を付ける
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: userProfile.avatar!.skinColor,
+            ),
+          ),
+
+          // レイヤー2: 職業スキン（胴体）
+          // TODO: 'assets/images/avatar/torso/novice_clothes.png'のような画像を用意
+          // Image.asset('assets/images/avatar/torso/$torsoSkin'),
+
+          // レイヤー3: 装備スキン（頭）
+          // TODO: 'assets/images/avatar/head/wood_helmet_01.png'のような画像を用意
+          // if (headSkin != null)
+          //   Image.asset('assets/images/avatar/head/$headSkin'),
+
+          // レイヤー4: 髪
+          // TODO: 'assets/images/avatar/hair/default.png'のような画像を用意し、色を付ける
+          Icon(
+            Icons.person, // 仮のアイコン
+            color: userProfile.avatar!.hairColor,
+            size: 50,
+          ),
+        ],
+      ),
+    );
+  }
+  // ▲▲▲ アバター表示ウィジェットを大幅に更新 ▲▲▲
 
   @override
   Widget build(BuildContext context) {
@@ -138,15 +194,7 @@ class _ProfileHeader extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 80, 16, 16),
         child: Column(
           children: [
-            CircleAvatar(
-              radius: 40,
-              backgroundImage: userProfile.photoURL != null
-                  ? NetworkImage(userProfile.photoURL!)
-                  : null,
-              child: userProfile.photoURL == null
-                  ? const Icon(Icons.person, size: 40)
-                  : null,
-            ),
+            _buildAvatar(), // 更新したアバター表示ウィジェットを呼び出す
             const SizedBox(height: 12),
             Text(userProfile.displayName ?? '名無しさん',
                 style: Theme.of(context).textTheme.headlineSmall),
@@ -163,8 +211,8 @@ class _ProfileHeader extends StatelessWidget {
                 ),
                 Column(
                   children: [
-                    Text('クラス', style: Theme.of(context).textTheme.bodySmall),
-                    Text(classInfo.title,
+                    Text('ジョブ', style: Theme.of(context).textTheme.bodySmall),
+                    Text(jobInfo.title,
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             color: Theme.of(context).colorScheme.primary)),
                   ],
@@ -184,6 +232,8 @@ class _ProfileHeader extends StatelessWidget {
     );
   }
 }
+
+// (以降の _ProfileStatsTab, _ProgressBar, _ProfilePostsTab, _ProfileMyQuestsTab は変更ありません)
 
 class _ProfileStatsTab extends StatelessWidget {
   final UserProfile userProfile;
@@ -207,7 +257,6 @@ class _ProfileStatsTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ▼▼▼ サンクチュアリへのボタンを追加 ▼▼▼
           ElevatedButton.icon(
             icon: const Icon(Icons.fort),
             label: const Text('サンクチュアリへ'),
@@ -337,10 +386,12 @@ class _ProfilePostsTab extends StatelessWidget {
           .orderBy('createdAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData)
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
-        if (snapshot.data!.docs.isEmpty)
+        }
+        if (snapshot.data!.docs.isEmpty) {
           return const Center(child: Text('まだ投稿がありません。'));
+        }
         return ListView.builder(
           itemCount: snapshot.data!.docs.length,
           itemBuilder: (context, index) {
@@ -368,10 +419,12 @@ class _ProfileMyQuestsTab extends StatelessWidget {
           .orderBy('createdAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData)
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
-        if (snapshot.data!.docs.isEmpty)
+        }
+        if (snapshot.data!.docs.isEmpty) {
           return const Center(child: Text('マイクエストはまだありません。'));
+        }
         return ListView.builder(
           itemCount: snapshot.data!.docs.length,
           itemBuilder: (context, index) {

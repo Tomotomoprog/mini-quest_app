@@ -23,24 +23,46 @@ class _PostScreenState extends State<PostScreen> {
   String? _selectedMyQuestId;
   List<MyQuest> _activeQuests = [];
   File? _imageFile;
+  UserProfile? _currentUserProfile;
+  JobResult? _myJobInfo;
+  bool _shareWisdom = false; // 「叡智の共有」を使うかどうかのフラグ
 
   @override
   void initState() {
     super.initState();
-    _fetchActiveQuests();
+    _fetchUserData();
   }
 
-  Future<void> _fetchActiveQuests() async {
+  Future<void> _fetchUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final snapshot = await FirebaseFirestore.instance
+
+    // ユーザー情報とアクティブなクエストを並行して取得
+    final userDocFuture =
+        FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    final questsFuture = FirebaseFirestore.instance
         .collection('my_quests')
         .where('uid', isEqualTo: user.uid)
         .where('status', isEqualTo: 'active')
         .get();
+
+    final responses = await Future.wait([userDocFuture, questsFuture]);
+
+    final userDoc = responses[0] as DocumentSnapshot;
+    final questsSnapshot = responses[1] as QuerySnapshot;
+
     if (mounted) {
+      if (userDoc.exists) {
+        final profile = UserProfile.fromFirestore(userDoc);
+        final level = computeLevel(profile.xp);
+        final jobInfo = computeJob(profile.stats, level);
+        setState(() {
+          _currentUserProfile = profile;
+          _myJobInfo = jobInfo;
+        });
+      }
       final quests =
-          snapshot.docs.map((doc) => MyQuest.fromFirestore(doc)).toList();
+          questsSnapshot.docs.map((doc) => MyQuest.fromFirestore(doc)).toList();
       setState(() => _activeQuests = quests);
     }
   }
@@ -55,22 +77,16 @@ class _PostScreenState extends State<PostScreen> {
 
   Future<void> _addPost() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null || _currentUserProfile == null || _myJobInfo == null)
+      return;
     final text = _textController.text.trim();
     if (text.isEmpty && _imageFile == null) return;
 
     setState(() => _isLoading = true);
 
     try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final userProfile = userDoc.exists
-          ? UserProfile.fromFirestore(userDoc)
-          : UserProfile(uid: user.uid, xp: 0, stats: UserStats());
-      final level = computeLevel(userProfile.xp);
-      final classInfo = computeClass(userProfile.stats, level);
+      final level = computeLevel(_currentUserProfile!.xp);
+      final jobInfo = _myJobInfo!;
 
       String? myQuestTitle;
       String? questCategory = widget.dailyQuest?.category;
@@ -94,7 +110,7 @@ class _PostScreenState extends State<PostScreen> {
         'userName': user.displayName ?? '名無しさん',
         'userAvatar': user.photoURL,
         'userLevel': level,
-        'userClass': classInfo.title,
+        'userClass': jobInfo.title,
         'text': text,
         'photoURL': photoURL,
         'createdAt': FieldValue.serverTimestamp(),
@@ -105,7 +121,8 @@ class _PostScreenState extends State<PostScreen> {
         'questId': widget.dailyQuest?.id,
         'questTitle': widget.dailyQuest?.title,
         'questCategory': questCategory,
-        'isBlessed': false, // isBlessedの初期値を追加
+        'isBlessed': false,
+        'isWisdomShared': _shareWisdom, // 「叡智の共有」フラグを保存
       });
 
       final userRef =
@@ -118,7 +135,6 @@ class _PostScreenState extends State<PostScreen> {
 
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
-      print('投稿エラー: $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('投稿に失敗しました。')));
@@ -130,6 +146,24 @@ class _PostScreenState extends State<PostScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 魔術師かつ学習カテゴリの場合のみ「叡智の共有」チェックボックスを表示
+    bool canShareWisdom = (_myJobInfo?.title == '魔術師') &&
+        ((widget.dailyQuest?.category == 'Study') ||
+            (_activeQuests
+                    .firstWhere((q) => q.id == _selectedMyQuestId,
+                        orElse: () => MyQuest(
+                            id: '',
+                            uid: '',
+                            title: '',
+                            motivation: '',
+                            category: '',
+                            status: '',
+                            startDate: '',
+                            endDate: '',
+                            createdAt: Timestamp.now()))
+                    .category ==
+                'Study'));
+
     return Scaffold(
       appBar: AppBar(title: const Text('達成を投稿')),
       body: SingleChildScrollView(
@@ -179,6 +213,22 @@ class _PostScreenState extends State<PostScreen> {
                 onChanged: (String? newValue) {
                   setState(() => _selectedMyQuestId = newValue);
                 },
+              ),
+            // ▼▼▼ 「叡智の共有」チェックボックス ▼▼▼
+            if (canShareWisdom)
+              Padding(
+                padding: const EdgeInsets.only(top: 16.0),
+                child: CheckboxListTile(
+                  title: const Text("叡智の共有を有効にする"),
+                  subtitle: const Text("他の人がこの投稿を見ると、獲得コインが増えます。"),
+                  value: _shareWisdom,
+                  onChanged: (newValue) {
+                    setState(() {
+                      _shareWisdom = newValue!;
+                    });
+                  },
+                  secondary: const Icon(Icons.lightbulb_outline),
+                ),
               ),
             const SizedBox(height: 16),
             Row(
