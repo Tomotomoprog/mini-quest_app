@@ -1,0 +1,149 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../models/my_quest.dart';
+import '../../my_quest_detail_screen.dart';
+
+class ProfileMyQuestsTab extends StatelessWidget {
+  final String userId;
+  const ProfileMyQuestsTab({super.key, required this.userId});
+
+  IconData _getIconForCategory(String category) {
+    switch (category) {
+      case 'Life':
+        return Icons.home_outlined;
+      case 'Study':
+        return Icons.school_outlined;
+      case 'Physical':
+        return Icons.fitness_center_outlined;
+      case 'Social':
+        return Icons.people_outline;
+      case 'Creative':
+        return Icons.palette_outlined;
+      case 'Mental':
+        return Icons.self_improvement_outlined;
+      default:
+        return Icons.flag_outlined;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('my_quests')
+          .where('uid', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.data!.docs.isEmpty) {
+          return const Center(child: Text('マイクエストはまだありません。'));
+        }
+
+        final myQuests = snapshot.data!.docs
+            .map((doc) => MyQuest.fromFirestore(doc))
+            .toList();
+
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+          itemCount: myQuests.length,
+          itemBuilder: (context, index) {
+            final quest = myQuests[index];
+            final startDate =
+                DateTime.tryParse(quest.startDate) ?? DateTime.now();
+            final endDate = DateTime.tryParse(quest.endDate) ?? DateTime.now();
+            final totalDuration = endDate.difference(startDate).inDays;
+            final elapsedDuration = DateTime.now().difference(startDate).inDays;
+            final progress = (totalDuration > 0)
+                ? (elapsedDuration / totalDuration).clamp(0.0, 1.0)
+                : 0.0;
+
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => MyQuestDetailScreen(quest: quest),
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2.0),
+                            child: Icon(_getIconForCategory(quest.category),
+                                color: Theme.of(context).primaryColor),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              quest.title,
+                              style: const TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Chip(
+                            label: Text(
+                                quest.status == 'active' ? '挑戦中' : '達成済み',
+                                style: const TextStyle(fontSize: 12)),
+                            backgroundColor: quest.status == 'active'
+                                ? Colors.blue.shade100
+                                : Colors.green.shade100,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (quest.status == 'active')
+                        Column(
+                          children: [
+                            LinearProgressIndicator(
+                              value: progress,
+                              backgroundColor: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(quest.startDate.replaceAll('-', '/'),
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall),
+                                Text(quest.endDate.replaceAll('-', '/'),
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall),
+                              ],
+                            ),
+                          ],
+                        ),
+                      if (quest.status != 'active')
+                        Text(
+                          '期間: ${quest.startDate.replaceAll('-', '/')} 〜 ${quest.endDate.replaceAll('-', '/')}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}

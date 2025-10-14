@@ -2,8 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'models/post.dart';
 import 'models/comment.dart';
+import 'models/post.dart';
 
 class CommentScreen extends StatefulWidget {
   final Post post;
@@ -15,48 +15,61 @@ class CommentScreen extends StatefulWidget {
 
 class _CommentScreenState extends State<CommentScreen> {
   final _commentController = TextEditingController();
-  bool _isPosting = false;
 
   Future<void> _addComment() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
     final text = _commentController.text.trim();
-    if (text.isEmpty) return;
+    if (user == null || text.isEmpty) return;
 
-    setState(() => _isPosting = true);
+    final commentRef = FirebaseFirestore.instance
+        .collection('posts')
+        .doc(widget.post.id)
+        .collection('comments')
+        .doc();
 
-    try {
-      final postRef =
-          FirebaseFirestore.instance.collection('posts').doc(widget.post.id);
+    final postRef =
+        FirebaseFirestore.instance.collection('posts').doc(widget.post.id);
 
-      // Webアプリの useAddComment を参考に実装
-      final commentData = {
+    final shouldNotify = widget.post.uid != user.uid;
+    final notificationRef =
+        FirebaseFirestore.instance.collection('notifications').doc();
+
+    await FirebaseFirestore.instance.runTransaction((transaction) async {
+      transaction.set(commentRef, {
         'uid': user.uid,
         'userName': user.displayName ?? '名無しさん',
         'userAvatar': user.photoURL,
         'text': text,
         'createdAt': FieldValue.serverTimestamp(),
-      };
+      });
+      transaction.update(postRef, {'commentCount': FieldValue.increment(1)});
 
-      await postRef.collection('comments').add(commentData);
-      await postRef.update({'commentCount': FieldValue.increment(1)});
-
-      _commentController.clear();
-    } catch (e) {
-      print('コメント投稿エラー: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('コメントの投稿に失敗しました。')));
+      if (shouldNotify) {
+        transaction.set(notificationRef, {
+          'type': 'comment',
+          'fromUserId': user.uid,
+          'fromUserName': user.displayName ?? '名無しさん',
+          'fromUserAvatar': user.photoURL,
+          'postId': widget.post.id,
+          'postTextSnippet': widget.post.text.length > 50
+              ? '${widget.post.text.substring(0, 50)}...'
+              : widget.post.text,
+          'targetUserId': widget.post.uid,
+          'createdAt': FieldValue.serverTimestamp(),
+          'isRead': false,
+        });
       }
-    } finally {
-      if (mounted) setState(() => _isPosting = false);
-    }
+    });
+
+    _commentController.clear();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.post.userName}の投稿')),
+      appBar: AppBar(
+        title: const Text('コメント'),
+      ),
       body: Column(
         children: [
           Expanded(
@@ -68,13 +81,15 @@ class _CommentScreenState extends State<CommentScreen> {
                   .orderBy('createdAt', descending: false)
                   .snapshots(),
               builder: (context, snapshot) {
-                if (!snapshot.hasData)
+                if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
-
+                }
                 final comments = snapshot.data!.docs
                     .map((doc) => Comment.fromFirestore(doc))
                     .toList();
-
+                if (comments.isEmpty) {
+                  return const Center(child: Text('まだコメントはありません。'));
+                }
                 return ListView.builder(
                   itemCount: comments.length,
                   itemBuilder: (context, index) {
@@ -88,15 +103,20 @@ class _CommentScreenState extends State<CommentScreen> {
                             ? const Icon(Icons.person)
                             : null,
                       ),
-                      title: Text(comment.userName),
+                      title: Text(comment.userName,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Text(comment.text),
+                      trailing: Text(
+                        DateFormat('M/d HH:mm')
+                            .format(comment.createdAt.toDate()),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     );
                   },
                 );
               },
             ),
           ),
-          // コメント入力欄
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Row(
@@ -110,17 +130,13 @@ class _CommentScreenState extends State<CommentScreen> {
                     ),
                   ),
                 ),
-                _isPosting
-                    ? const Padding(
-                        padding: EdgeInsets.all(8.0),
-                        child: CircularProgressIndicator())
-                    : IconButton(
-                        icon: const Icon(Icons.send),
-                        onPressed: _addComment,
-                      ),
+                IconButton(
+                  icon: const Icon(Icons.send),
+                  onPressed: _addComment,
+                ),
               ],
             ),
-          )
+          ),
         ],
       ),
     );

@@ -1,26 +1,26 @@
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'models/post.dart';
-import 'comment_screen.dart';
-import 'profile_screen.dart';
-import 'models/user_profile.dart';
-import 'utils/ability_service.dart';
-import 'utils/progression.dart';
-import 'models/ability.dart';
+import '../../models/post.dart';
+import '../../models/user_profile.dart';
+import '../../models/ability.dart';
+import '../../utils/progression.dart';
+import '../../utils/ability_service.dart';
+import '../../comment_screen.dart';
+import '../../profile_screen.dart';
 
-class TimelineScreen extends StatefulWidget {
-  const TimelineScreen({super.key});
+class ProfilePostsTab extends StatefulWidget {
+  final String userId;
+  const ProfilePostsTab({super.key, required this.userId});
 
   @override
-  State<TimelineScreen> createState() => _TimelineScreenState();
+  State<ProfilePostsTab> createState() => _ProfilePostsTabState();
 }
 
-class _TimelineScreenState extends State<TimelineScreen> {
+class _ProfilePostsTabState extends State<ProfilePostsTab> {
   Set<String> _likedPostIds = {};
   UserProfile? _currentUserProfile;
-  JobResult? _myJobInfo;
   List<Ability> _myAbilities = [];
   final Map<String, String> _usedAbilitiesOnPosts = {};
 
@@ -53,7 +53,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
         final jobInfo = computeJob(profile.stats, level);
         setState(() {
           _currentUserProfile = profile;
-          _myJobInfo = jobInfo;
           _myAbilities = AbilityService.getAbilitiesForClass(jobInfo.title);
         });
       }
@@ -73,12 +72,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
     final isLiked = _likedPostIds.contains(postId);
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
-      final postSnapshot = await transaction.get(postRef);
-      if (!postSnapshot.exists) return;
-
-      final post = Post.fromFirestore(postSnapshot);
-      final shouldNotify = !isLiked && post.uid != user.uid;
-
       if (isLiked) {
         transaction.delete(likeRef);
         transaction.update(postRef, {'likeCount': FieldValue.increment(-1)});
@@ -86,27 +79,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
         transaction.set(likeRef,
             {'uid': user.uid, 'createdAt': FieldValue.serverTimestamp()});
         transaction.update(postRef, {'likeCount': FieldValue.increment(1)});
-
-        if (shouldNotify) {
-          final notificationRef =
-              FirebaseFirestore.instance.collection('notifications').doc();
-          transaction.set(notificationRef, {
-            'type': 'like',
-            'fromUserId': user.uid,
-            'fromUserName': user.displayName ?? '名無しさん',
-            'fromUserAvatar': user.photoURL,
-            'postId': post.id,
-            'postTextSnippet': post.text.length > 50
-                ? '${post.text.substring(0, 50)}...'
-                : post.text,
-            'targetUserId': post.uid,
-            'createdAt': FieldValue.serverTimestamp(),
-            'isRead': false,
-          });
-        }
       }
     });
-
     setState(() {
       if (isLiked) {
         _likedPostIds.remove(postId);
@@ -147,58 +121,54 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('タイムライン')),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('posts')
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting ||
-              _currentUserProfile == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('まだ投稿がありません。'));
-          }
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('posts')
+          .where('uid', isEqualTo: widget.userId)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || _currentUserProfile == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.data!.docs.isEmpty) {
+          return const Center(child: Text('まだ投稿がありません。'));
+        }
 
-          final posts = snapshot.data!.docs
-              .map((doc) => Post.fromFirestore(doc))
-              .toList();
+        final posts =
+            snapshot.data!.docs.map((doc) => Post.fromFirestore(doc)).toList();
 
-          return ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-            itemCount: posts.length,
-            itemBuilder: (context, index) {
-              final post = posts[index];
-              return Card(
-                elevation: 2,
-                margin: const EdgeInsets.symmetric(vertical: 8.0),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _PostHeader(post: post),
-                    _PostContent(post: post),
-                    _PostActions(
-                      post: post,
-                      isLiked: _likedPostIds.contains(post.id),
-                      myAbilities: _myAbilities,
-                      isMyPost: post.uid == _currentUserProfile?.uid,
-                      usedAbilityName: _usedAbilitiesOnPosts[post.id],
-                      onLike: () => _toggleLike(post.id),
-                      onUseAbility: (ability) => _useAbility(ability, post),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      ),
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+          itemCount: posts.length,
+          itemBuilder: (context, index) {
+            final post = posts[index];
+            return Card(
+              elevation: 2,
+              margin: const EdgeInsets.symmetric(vertical: 8.0),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _PostHeader(post: post),
+                  _PostContent(post: post),
+                  _PostActions(
+                    post: post,
+                    isLiked: _likedPostIds.contains(post.id),
+                    myAbilities: _myAbilities,
+                    isMyPost: post.uid == _currentUserProfile?.uid,
+                    usedAbilityName: _usedAbilitiesOnPosts[post.id],
+                    onLike: () => _toggleLike(post.id),
+                    onUseAbility: (ability) => _useAbility(ability, post),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

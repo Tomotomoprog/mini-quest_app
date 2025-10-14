@@ -1,29 +1,37 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// Webアプリの useFriends.ts を参考にしたFriendshipモデル
+// ▼▼▼ このenum定義を追加 ▼▼▼
+enum FriendshipStatus {
+  pending, // 申請中
+  accepted, // 承認済み
+  declined, // 拒否
+  none, // 関係なし
+}
+// ▲▲▲ このenum定義を追加 ▲▲▲
+
 class Friendship {
   final String id;
-  final List<String> userIds;
-  final String requesterId;
-  final String recipientId;
+  final String senderId;
+  final String receiverId;
   final String status; // "pending", "accepted", "declined"
+  final Timestamp createdAt;
 
   Friendship({
     required this.id,
-    required this.userIds,
-    required this.requesterId,
-    required this.recipientId,
+    required this.senderId,
+    required this.receiverId,
     required this.status,
+    required this.createdAt,
   });
 
   factory Friendship.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return Friendship(
       id: doc.id,
-      userIds: List<String>.from(data['userIds'] ?? []),
-      requesterId: data['requesterId'] ?? '',
-      recipientId: data['recipientId'] ?? '',
-      status: data['status'] ?? 'pending',
+      senderId: data['senderId'],
+      receiverId: data['receiverId'],
+      status: data['status'],
+      createdAt: data['createdAt'],
     );
   }
 }
