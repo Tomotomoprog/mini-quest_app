@@ -6,14 +6,14 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'auth_gate.dart';
 import 'firebase_options.dart';
-import 'friends_screen.dart'; // friends_screenを正しくインポート
+import 'friends_screen.dart';
 import 'models/quest.dart';
 import 'my_quests_screen.dart';
 import 'post_screen.dart';
 import 'profile_screen.dart';
 import 'timeline_screen.dart';
 import 'utils/quest_service.dart';
-// growth_path_screenはmain.dartでは不要なので削除
+// growth_path_screen.dart は main.dart では不要
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,21 +28,24 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final seedColor = const Color(0xFF0EA5E9);
+    final Color primaryBlue = const Color(0xFF0EA5E9);
     final textTheme = GoogleFonts.interTextTheme(Theme.of(context).textTheme);
 
     return MaterialApp(
       title: 'MiniQuest',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-            seedColor: seedColor, background: const Color(0xFFF8FAFC)),
+            seedColor: primaryBlue, background: const Color(0xFFF8FAFC)),
         textTheme: textTheme,
         appBarTheme: AppBarTheme(
-          backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.8),
+          backgroundColor:
+              const Color(0xFFFFFFFF).withOpacity(0.8), // デフォルトのAppBar背景色
           foregroundColor: const Color(0xFF0f172a),
           elevation: 0,
-          titleTextStyle:
-              textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          titleTextStyle: textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: primaryBlue,
+          ),
         ),
         cardTheme: CardThemeData(
           elevation: 0,
@@ -51,8 +54,8 @@ class MyApp extends StatelessWidget {
             side: const BorderSide(color: Color(0xFFE2E8F0)),
           ),
         ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          selectedItemColor: Colors.orange,
+        bottomNavigationBarTheme: BottomNavigationBarThemeData(
+          selectedItemColor: primaryBlue,
           selectedLabelStyle: TextStyle(fontSize: 12.0),
           unselectedLabelStyle: TextStyle(fontSize: 12.0),
         ),
@@ -79,15 +82,13 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId != null) {
-      // ▼▼▼ widgetOptionsのリストを修正 ▼▼▼
       _widgetOptions = <Widget>[
         const QuestListScreen(),
         const TimelineScreen(),
         const MyQuestsScreen(),
-        const FriendsScreen(), // growth_path_screenからFriendsScreenに戻す
+        const FriendsScreen(),
         ProfileScreen(userId: currentUserId),
       ];
-      // ▲▲▲ widgetOptionsのリストを修正 ▲▲▲
     }
   }
 
@@ -110,9 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'ホーム'),
           BottomNavigationBarItem(icon: Icon(Icons.timeline), label: 'タイムライン'),
           BottomNavigationBarItem(icon: Icon(Icons.flag), label: 'マイクエスト'),
-          // ▼▼▼ ナビゲーション項目を「フレンド」に戻す ▼▼▼
           BottomNavigationBarItem(icon: Icon(Icons.people), label: 'フレンド'),
-          // ▲▲▲ ナビゲーション項目を「フレンド」に戻す ▲▲▲
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'プロフィール'),
         ],
         currentIndex: _selectedIndex,
@@ -122,7 +121,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// (以降のQuestListScreenは変更なし)
 class QuestListScreen extends StatefulWidget {
   const QuestListScreen({super.key});
   @override
@@ -138,6 +136,81 @@ class _QuestListScreenState extends State<QuestListScreen> {
     _dailyQuestsFuture = QuestService.getDailyQuests();
   }
 
+  @override
+  Widget build(BuildContext context) {
+    final Color primaryBlue = Theme.of(context).colorScheme.primary;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'MiniQuest',
+          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.bold),
+        ),
+        // ▼▼▼ 背景色を明示的に指定 ▼▼▼
+        backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.8),
+        // ▲▲▲ 背景色を明示的に指定 ▲▲▲
+      ),
+      body: FutureBuilder<List<Quest>>(
+        future: _dailyQuestsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return const Center(child: Text('クエストの取得に失敗しました'));
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('今日のクエストはありません'));
+          }
+          final quests = snapshot.data!;
+
+          return Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16.0),
+                width: double.infinity,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '今日のクエスト',
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '毎日更新される3つの挑戦。達成を記録して、経験値やコイン、素材を手に入れよう！',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12.0, vertical: 8.0),
+                  itemCount: quests.length,
+                  itemBuilder: (context, index) {
+                    final quest = quests[index];
+                    return _QuestCard(quest: quest);
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// _QuestCardウィジェット (変更なし)
+class _QuestCard extends StatelessWidget {
+  final Quest quest;
+  const _QuestCard({required this.quest});
+
   static const Map<String, dynamic> _categoryDesigns = {
     'Life': {'icon': Icons.home_outlined, 'color': Colors.green},
     'Study': {'icon': Icons.school_outlined, 'color': Colors.blue},
@@ -150,117 +223,72 @@ class _QuestListScreenState extends State<QuestListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('ホーム')),
-      body: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16.0),
-            width: double.infinity,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '今日のクエスト',
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '毎日更新される3つの挑戦。達成を記録して、経験値やコイン、素材を手に入れよう！',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: FutureBuilder<List<Quest>>(
-              future: _dailyQuestsFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return const Center(child: Text('クエストの取得に失敗しました'));
-                }
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(child: Text('今日のクエストはありません'));
-                }
-                final quests = snapshot.data!;
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                  itemCount: quests.length,
-                  itemBuilder: (context, index) {
-                    final quest = quests[index];
-                    final design = _categoryDesigns[quest.category] ??
-                        _categoryDesigns['Default']!;
-                    final color = design['color'] as Color;
-                    final icon = design['icon'] as IconData;
+    final design =
+        _categoryDesigns[quest.category] ?? _categoryDesigns['Default']!;
+    final color = design['color'] as Color;
+    final icon = design['icon'] as IconData;
 
-                    return Card(
-                      elevation: 2,
-                      margin: const EdgeInsets.symmetric(vertical: 8),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
-                      clipBehavior: Clip.antiAlias,
-                      child: Container(
-                        decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [color.withOpacity(0.1), Colors.white],
-                        )),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Chip(
-                                avatar: Icon(icon, color: color, size: 18),
-                                label: Text(quest.tag),
-                                backgroundColor: color.withOpacity(0.15),
-                                side: BorderSide.none,
-                              ),
-                              const SizedBox(height: 12),
-                              Text(quest.title,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleLarge
-                                      ?.copyWith(fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 4),
-                              Text(quest.description,
-                                  style:
-                                      Theme.of(context).textTheme.bodyMedium),
-                              const SizedBox(height: 20),
-                              ElevatedButton.icon(
-                                icon: const Icon(Icons.check_circle_outline),
-                                label: const Text('達成を投稿'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: color,
-                                  foregroundColor: Colors.white,
-                                  minimumSize: const Size(double.infinity, 44),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: () {
-                                  Navigator.of(context).push(MaterialPageRoute(
-                                      builder: (context) =>
-                                          PostScreen(dailyQuest: quest)));
-                                },
-                              )
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: color, width: 4)),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [color.withOpacity(0.05), Colors.white],
+            )),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Chip(
+                avatar: Icon(icon, color: color, size: 18),
+                label: Text(quest.tag),
+                backgroundColor: color.withOpacity(0.15),
+                side: BorderSide.none,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                quest.title,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                quest.description,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('記録する'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: color,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 44),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  elevation: 1,
+                ),
+                onPressed: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (context) => PostScreen(dailyQuest: quest)));
+                },
+              )
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

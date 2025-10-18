@@ -21,10 +21,8 @@ class MyQuestDetailScreen extends StatefulWidget {
 }
 
 class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
-  // タイムライン画面と同様に、ユーザー情報や「いいね」の状態を管理
   Set<String> _likedPostIds = {};
   UserProfile? _currentUserProfile;
-  JobResult? _myJobInfo;
   List<Ability> _myAbilities = [];
   final Map<String, String> _usedAbilitiesOnPosts = {};
 
@@ -34,7 +32,6 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
     _fetchMyData();
   }
 
-  // ログインユーザーの情報を取得する
   Future<void> _fetchMyData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -58,7 +55,6 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
         final jobInfo = computeJob(profile.stats, level);
         setState(() {
           _currentUserProfile = profile;
-          _myJobInfo = jobInfo;
           _myAbilities = AbilityService.getAbilitiesForClass(jobInfo.title);
         });
       }
@@ -70,9 +66,7 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
     }
   }
 
-  // いいねを切り替える処理
   Future<void> _toggleLike(String postId) async {
-    // (timeline_screen.dartから処理を移植)
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final postRef = FirebaseFirestore.instance.collection('posts').doc(postId);
@@ -98,9 +92,7 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
     });
   }
 
-  // アビリティを使用する処理
   Future<void> _useAbility(Ability ability, Post post) async {
-    // (timeline_screen.dartから処理を移植)
     final targetUserRef =
         FirebaseFirestore.instance.collection('users').doc(post.uid);
 
@@ -129,93 +121,210 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
     });
   }
 
+  Future<void> _completeQuest() async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('my_quests')
+          .doc(widget.quest.id)
+          .update({'status': 'completed'});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('クエスト達成！おめでとうございます！'), backgroundColor: Colors.green),
+      );
+      // setStateは不要（StreamBuilderが自動で更新するため）
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('エラーが発生しました: $e')),
+      );
+    }
+  }
+
+  Future<void> _deleteQuest() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('クエストを削除'),
+          content: const Text('このマイクエストを本当に削除しますか？\n関連する投稿は削除されません。'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('キャンセル'),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            TextButton(
+              child: const Text('削除', style: TextStyle(color: Colors.red)),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('my_quests')
+            .doc(widget.quest.id)
+            .delete();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('クエストを削除しました。')),
+          );
+          Navigator.of(context).pop();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('削除中にエラーが発生しました: $e')),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.quest.title),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'クエストを削除',
+            onPressed: _deleteQuest,
+          )
+        ],
       ),
       body: CustomScrollView(
+        // ▼▼▼ Paddingを追加して、下部のボタンとコンテンツが重ならないように調整 ▼▼▼
         slivers: [
-          SliverToBoxAdapter(
-            child: _QuestDetailHeader(quest: widget.quest),
-          ),
-          // 冒険の記録（投稿リスト）
-          StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('posts')
-                .where('myQuestId', isEqualTo: widget.quest.id)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const SliverToBoxAdapter(
-                    child: Center(child: CircularProgressIndicator()));
-              }
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return const SliverToBoxAdapter(
-                    child: Center(
+          SliverPadding(
+            padding: const EdgeInsets.only(bottom: 80), // ボタンの高さを考慮
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                _QuestDetailHeader(quest: widget.quest), // ヘッダー
+                // ポストリストを表示するためのStreamBuilder
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('posts')
+                      .where('myQuestId', isEqualTo: widget.quest.id)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                      return const Center(
                         child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text('このクエストに関する投稿はまだありません。'),
-                )));
-              }
+                          padding: EdgeInsets.all(16.0),
+                          child: Text('このクエストに関する投稿はまだありません。'),
+                        ),
+                      );
+                    }
 
-              final posts = snapshot.data!.docs
-                  .map((doc) => Post.fromFirestore(doc))
-                  .toList();
-              posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                    final posts = snapshot.data!.docs
+                        .map((doc) => Post.fromFirestore(doc))
+                        .toList();
+                    posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-              return SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final post = posts[index];
-                    // ▼▼▼ タイムラインと同様のカードデザインに変更 ▼▼▼
-                    return Card(
-                      elevation: 2,
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 12.0, vertical: 8.0),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
-                      clipBehavior: Clip.antiAlias,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _PostHeader(post: post),
-                          _PostContent(post: post),
-                          if (_currentUserProfile != null)
-                            _PostActions(
-                              post: post,
-                              isLiked: _likedPostIds.contains(post.id),
-                              myAbilities: _myAbilities,
-                              isMyPost: post.uid == _currentUserProfile?.uid,
-                              usedAbilityName: _usedAbilitiesOnPosts[post.id],
-                              onLike: () => _toggleLike(post.id),
-                              onUseAbility: (ability) =>
-                                  _useAbility(ability, post),
-                            ),
-                        ],
-                      ),
+                    // Columnを使って複数の投稿カードを表示
+                    return Column(
+                      children: posts
+                              .map((post) => Card(
+                                    elevation: 2,
+                                    margin: const EdgeInsets.symmetric(
+                                        horizontal: 12.0, vertical: 8.0),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(16)),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        _PostHeader(post: post),
+                                        _PostContent(post: post),
+                                        if (_currentUserProfile != null)
+                                          _PostActions(
+                                            post: post,
+                                            isLiked:
+                                                _likedPostIds.contains(post.id),
+                                            myAbilities: _myAbilities,
+                                            isMyPost: post.uid ==
+                                                _currentUserProfile?.uid,
+                                            usedAbilityName:
+                                                _usedAbilitiesOnPosts[post.id],
+                                            onLike: () => _toggleLike(post.id),
+                                            onUseAbility: (ability) =>
+                                                _useAbility(ability, post),
+                                          ),
+                                      ],
+                                    ),
+                                  ))
+                              .toList() ??
+                          [], // postsがnullの場合も考慮
                     );
-                    // ▲▲▲ タイムラインと同様のカードデザインに変更 ▲▲▲
                   },
-                  childCount: posts.length,
                 ),
-              );
-            },
+              ]),
+            ),
           ),
         ],
       ),
+      // ▲▲▲ Paddingを追加 ▲▲▲
+
+      // ▼▼▼ 達成ボタンを bottomNavigationBar に移動 ▼▼▼
+      bottomNavigationBar: StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('my_quests')
+              .doc(widget.quest.id)
+              .snapshots(),
+          builder: (context, questSnapshot) {
+            if (!questSnapshot.hasData)
+              return const SizedBox.shrink(); // データがない場合は何も表示しない
+            final currentQuest = MyQuest.fromFirestore(questSnapshot.data!);
+
+            // 挑戦中の場合のみ達成ボタンを表示
+            if (currentQuest.status == 'active') {
+              return Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.check_circle),
+                  label: const Text('目標を達成済みにする'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: _completeQuest,
+                ),
+              );
+            } else {
+              // 達成済みの場合はメッセージ表示
+              return Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Center(
+                      child: Chip(
+                    label: Text('🎉 この目標は達成済みです！',
+                        style: TextStyle(color: Colors.green[800])),
+                    backgroundColor: Colors.green[100],
+                    avatar: Icon(Icons.emoji_events, color: Colors.green[800]),
+                  )));
+            }
+          }),
+      // ▲▲▲ 達成ボタンを bottomNavigationBar に移動 ▲▲▲
     );
   }
 }
 
-// --- 以下、クエスト詳細と投稿カードを構成するウィジェット ---
+// --- 以下、変更なしのウィジェット ---
 
 class _QuestDetailHeader extends StatelessWidget {
   final MyQuest quest;
   const _QuestDetailHeader({required this.quest});
 
-  // (中身は変更なし)
   IconData _getIconForCategory(String category) {
     switch (category) {
       case 'Life':
@@ -288,33 +397,48 @@ class _QuestDetailHeader extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          if (quest.status == 'active')
-            Column(
-              children: [
-                LinearProgressIndicator(
-                  value: progress,
-                  backgroundColor: color.withOpacity(0.2),
-                  valueColor: AlwaysStoppedAnimation<Color>(color),
-                  minHeight: 8,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(quest.startDate.replaceAll('-', '/'),
-                        style: Theme.of(context).textTheme.bodySmall),
-                    Text('残り ${totalDuration - elapsedDuration} 日',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(fontWeight: FontWeight.bold)),
-                    Text(quest.endDate.replaceAll('-', '/'),
-                        style: Theme.of(context).textTheme.bodySmall),
-                  ],
-                ),
-              ],
-            ),
+          StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('my_quests')
+                  .doc(quest.id)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) return const SizedBox.shrink();
+                final currentQuest = MyQuest.fromFirestore(snapshot.data!);
+                if (currentQuest.status == 'active') {
+                  return Column(
+                    children: [
+                      LinearProgressIndicator(
+                        value: progress,
+                        backgroundColor: color.withOpacity(0.2),
+                        valueColor: AlwaysStoppedAnimation<Color>(color),
+                        minHeight: 8,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(quest.startDate.replaceAll('-', '/'),
+                              style: Theme.of(context).textTheme.bodySmall),
+                          Text('残り ${totalDuration - elapsedDuration} 日',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(fontWeight: FontWeight.bold)),
+                          Text(quest.endDate.replaceAll('-', '/'),
+                              style: Theme.of(context).textTheme.bodySmall),
+                        ],
+                      ),
+                    ],
+                  );
+                } else {
+                  return Text(
+                    '期間: ${quest.startDate.replaceAll('-', '/')} 〜 ${quest.endDate.replaceAll('-', '/')}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  );
+                }
+              }),
           const SizedBox(height: 24),
           Container(
             width: double.infinity,
@@ -353,8 +477,6 @@ class _QuestDetailHeader extends StatelessWidget {
     );
   }
 }
-
-// --- タイムラインから移植した投稿カード用ウィジェット ---
 
 class _PostHeader extends StatelessWidget {
   final Post post;
@@ -423,6 +545,20 @@ class _PostContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (post.myQuestTitle != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.blue.shade200)),
+              child: Text('🚀 ${post.myQuestTitle}',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade800,
+                      fontSize: 12)),
+            ),
           if (post.text.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 8.0),

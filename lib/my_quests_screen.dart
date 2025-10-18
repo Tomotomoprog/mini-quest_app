@@ -4,12 +4,11 @@ import 'package:flutter/material.dart';
 import 'models/my_quest.dart';
 import 'create_my_quest_screen.dart';
 import 'my_quest_detail_screen.dart';
-import 'post_screen.dart'; // 投稿画面をインポート
+import 'post_screen.dart';
 
 class MyQuestsScreen extends StatelessWidget {
   const MyQuestsScreen({super.key});
 
-  // カテゴリ文字列に対応するアイコンを返すヘルパー関数
   IconData _getIconForCategory(String category) {
     switch (category) {
       case 'Life':
@@ -38,11 +37,13 @@ class MyQuestsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('マイクエスト'),
+        // ▼▼▼ タイトルを追加、toolbarHeightを削除 ▼▼▼
+        title: const Text('MiniQuest'),
+        // toolbarHeight: 0, // この行を削除
+        // ▲▲▲ タイトルを追加、toolbarHeightを削除 ▲▲▲
       ),
       body: Column(
         children: [
-          // コンセプト説明エリア
           Container(
             padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
             width: double.infinity,
@@ -64,8 +65,6 @@ class MyQuestsScreen extends StatelessWidget {
               ],
             ),
           ),
-
-          // ▼▼▼ 進捗投稿カードを追加 ▼▼▼
           Padding(
             padding:
                 const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
@@ -104,10 +103,7 @@ class MyQuestsScreen extends StatelessWidget {
               ),
             ),
           ),
-          // ▲▲▲ 進捗投稿カードを追加 ▲▲▲
-
           const Divider(height: 1, indent: 16, endIndent: 16),
-
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance

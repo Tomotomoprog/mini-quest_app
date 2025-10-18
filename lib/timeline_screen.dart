@@ -131,6 +131,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
               SetOptions(merge: true));
         });
         break;
+      // 他のアビリティのロジックは省略
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -148,7 +149,12 @@ class _TimelineScreenState extends State<TimelineScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('タイムライン')),
+      appBar: AppBar(
+        // ▼▼▼ タイトルを追加、toolbarHeightを削除 ▼▼▼
+        title: const Text('MiniQuest'),
+        // toolbarHeight: 0, // この行を削除
+        // ▲▲▲ タイトルを追加、toolbarHeightを削除 ▲▲▲
+      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('posts')
@@ -203,6 +209,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
   }
 }
 
+// (以降の _PostHeader, _PostContent, _PostActions ウィジェットは変更なし)
 class _PostHeader extends StatelessWidget {
   final Post post;
   const _PostHeader({required this.post});

@@ -10,7 +10,6 @@ import 'models/ability.dart';
 import 'utils/ability_service.dart';
 import 'utils/progression.dart';
 
-// 分割したウィジェットをインポート
 import 'widgets/profile/profile_header.dart';
 import 'widgets/profile/profile_stats_tab.dart';
 import 'widgets/profile/profile_posts_tab.dart';
@@ -104,7 +103,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           return CustomScrollView(
             slivers: [
               SliverAppBar(
-                title: const Text('プロフィール'),
+                // ▼▼▼ タイトルを追加 ▼▼▼
+                title: const Text('MiniQuest'),
+                // ▲▲▲ タイトルを追加 ▲▲▲
                 pinned: true,
                 actions: [
                   if (_isMyProfile)

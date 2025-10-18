@@ -26,10 +26,11 @@ class ProfileFriendsListScreen extends StatelessWidget {
     final friendIds = friendshipsSnapshot.docs
         .map((doc) {
           final userIds = doc.data()['userIds'] as List;
+          // 相手のIDを取得 (自分ではない方のID)
           return userIds.firstWhere((id) => id != userId, orElse: () => null);
         })
         .where((id) => id != null)
-        .toList();
+        .toList(); // nullを除外
 
     if (friendIds.isEmpty) return [];
 
@@ -68,6 +69,10 @@ class ProfileFriendsListScreen extends StatelessWidget {
             itemCount: friends.length,
             itemBuilder: (context, index) {
               final friend = friends[index];
+              // ログイン中のユーザー自身は表示しない
+              if (friend.uid == FirebaseAuth.instance.currentUser?.uid) {
+                return const SizedBox.shrink(); // 何も表示しない
+              }
               return Card(
                 margin: const EdgeInsets.symmetric(vertical: 6),
                 child: ListTile(
@@ -81,9 +86,12 @@ class ProfileFriendsListScreen extends StatelessWidget {
                   ),
                   title: Text(friend.displayName ?? '名無しさん',
                       style: const TextStyle(fontWeight: FontWeight.bold)),
+                  // ユーザー検索カードにあった申請ボタンなどは不要なので削除
                   onTap: () {
+                    // タップしたらそのフレンドのプロフィール画面へ遷移
                     Navigator.of(context).push(
                       MaterialPageRoute(
+                        // ProfileScreenに正しい引数を渡す
                         builder: (context) => ProfileScreen(userId: friend.uid),
                       ),
                     );

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'models/friendship.dart';
 import 'models/user_profile.dart';
-import 'models/notification.dart'; // 作成したモデルをインポート
+import 'models/notification.dart';
 import 'profile_screen.dart';
 
 class FriendsScreen extends StatefulWidget {
@@ -23,7 +23,7 @@ class _FriendsScreenState extends State<FriendsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this); // タブの数を3に変更
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -59,27 +59,39 @@ class _FriendsScreenState extends State<FriendsScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('フレンド'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'フレンド'),
-            Tab(text: 'お知らせ'), // お知らせタブを追加
-            Tab(text: '探す'),
-          ],
-        ),
+        // ▼▼▼ タイトルを追加 ▼▼▼
+        title: const Text('MiniQuest'),
+        // ▲▲▲ タイトルを追加 ▲▲▲
+        // toolbarHeight: 0, // 高さを指定していた場合は削除
+        // bottom プロパティは削除したまま
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _buildFriendsListTab(),
-          _buildNotificationsTab(), // お知らせタブの中身を追加
-          _buildSearchUsersTab(),
+          TabBar(
+            // TabBarはbody内に配置
+            controller: _tabController,
+            tabs: const [
+              Tab(text: 'フレンド'),
+              Tab(text: 'お知らせ'),
+              Tab(text: '探す'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildFriendsListTab(),
+                _buildNotificationsTab(),
+                _buildSearchUsersTab(),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
+  // (以降の _buildNotificationsTab, _formatRelativeTime, _buildFriendsListTab, _buildSearchUsersTab などは変更なし)
   Widget _buildNotificationsTab() {
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
     if (currentUid == null) return const Center(child: Text("ログインしてください"));
