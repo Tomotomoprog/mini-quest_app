@@ -6,8 +6,15 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'models/my_quest.dart';
 import 'models/quest.dart';
-import 'models/user_profile.dart';
+import 'models/user_profile.dart' as model; // エイリアスを使用
 import 'utils/progression.dart';
+
+// ヘルパー関数（クラス外または共通のユーティリティファイルに追加）
+bool _isSameDate(DateTime date1, DateTime date2) {
+  return date1.year == date2.year &&
+      date1.month == date2.month &&
+      date1.day == date2.day;
+}
 
 class PostScreen extends StatefulWidget {
   final Quest? dailyQuest;
@@ -23,7 +30,7 @@ class _PostScreenState extends State<PostScreen> {
   MyQuest? _selectedMyQuest;
   List<MyQuest> _activeQuests = [];
   File? _imageFile;
-  UserProfile? _currentUserProfile;
+  model.UserProfile? _currentUserProfile; // エイリアスを使用
   JobResult? _myJobInfo;
   bool _shareWisdom = false;
 
@@ -52,7 +59,7 @@ class _PostScreenState extends State<PostScreen> {
 
     if (mounted) {
       if (userDoc.exists) {
-        final profile = UserProfile.fromFirestore(userDoc);
+        final profile = model.UserProfile.fromFirestore(userDoc); // エイリアスを使用
         final level = computeLevel(profile.xp);
         final jobInfo = computeJob(profile.stats, level);
         setState(() {
@@ -167,18 +174,74 @@ class _PostScreenState extends State<PostScreen> {
         'questCategory': questCategory,
         'isBlessed': false,
         'isWisdomShared': _shareWisdom,
+        // timeSpentMinutes はここでは追加しない
       });
 
+      // --- 連続記録更新ロジック START ---
       final userRef =
           FirebaseFirestore.instance.collection('users').doc(user.uid);
-      final updates = <String, dynamic>{'xp': FieldValue.increment(10)};
-      if (questCategory != null) {
-        updates['stats.$questCategory'] = FieldValue.increment(1);
-      }
-      await userRef.set(updates, SetOptions(merge: true));
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final userSnapshot = await transaction.get(userRef);
+        if (!userSnapshot.exists) {
+          throw Exception("ユーザードキュメントが存在しません！");
+        }
+        final currentProfile = model.UserProfile.fromFirestore(userSnapshot);
+
+        int currentStreak = currentProfile.currentStreak;
+        int longestStreak = currentProfile.longestStreak;
+        final DateTime now = DateTime.now();
+        final DateTime today = DateTime(now.year, now.month, now.day);
+
+        DateTime? lastPostDateTime;
+        if (currentProfile.lastPostDate != null) {
+          lastPostDateTime = currentProfile.lastPostDate!.toDate();
+          final DateTime lastPostDay = DateTime(lastPostDateTime.year,
+              lastPostDateTime.month, lastPostDateTime.day);
+          final DateTime yesterday = today.subtract(const Duration(days: 1));
+
+          if (_isSameDate(lastPostDay, today)) {
+            // Streak doesn't change
+          } else if (_isSameDate(lastPostDay, yesterday)) {
+            currentStreak++;
+          } else {
+            currentStreak = 1;
+          }
+        } else {
+          currentStreak = 1;
+        }
+
+        if (currentStreak > longestStreak) {
+          longestStreak = currentStreak;
+        }
+
+        final updates = <String, dynamic>{
+          'xp': FieldValue.increment(10),
+          'currentStreak': currentStreak,
+          'longestStreak': longestStreak,
+          'lastPostDate': Timestamp.fromDate(now),
+        };
+        if (questCategory != null) {
+          updates['stats.$questCategory'] = FieldValue.increment(1);
+        }
+        // ▼▼▼ totalEffortMinutes の更新に関する try-catch ブロックを削除 ▼▼▼
+        // try {
+        //     // ignore: unnecessary_null_comparison
+        //     if (timeSpent != null && timeSpent > 0) { // Should throw here
+        //       updates['totalEffortMinutes'] = FieldValue.increment(timeSpent);
+        //     }
+        // } catch (e) {
+        //     // Expected error, do nothing.
+        // }
+        // ▲▲▲ totalEffortMinutes の更新に関する try-catch ブロックを削除 ▲▲▲
+
+        transaction.set(userRef, updates, SetOptions(merge: true));
+      });
+      // --- 連続記録更新ロジック END ---
 
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
+      print("投稿エラー: $e"); // エラーログ表示
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('投稿に失敗しました。')));
@@ -296,7 +359,6 @@ class _PostScreenState extends State<PostScreen> {
               onPressed: _pickImage,
             ),
             const SizedBox(width: 8),
-            // ▼▼▼ 分かりやすいチップ形式のボタンに変更 ▼▼▼
             ActionChip(
               avatar: Icon(Icons.flag_outlined,
                   color: _selectedMyQuest != null
@@ -323,7 +385,6 @@ class _PostScreenState extends State<PostScreen> {
                 ),
               ),
             ),
-            // ▲▲▲ 分かりやすいチップ形式のボタンに変更 ▲▲▲
           ],
         ),
       ),

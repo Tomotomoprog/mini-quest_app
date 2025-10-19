@@ -19,7 +19,9 @@ class Post {
   final String? questCategory;
   final bool isBlessed;
   final bool isWisdomShared;
-  final int? timeSpentMinutes; // ▼▼▼ この行を追加 ▼▼▼
+  // ▼▼▼ フィールド名と型を変更 ▼▼▼
+  final double? timeSpentHours;
+  // ▲▲▲ フィールド名と型を変更 ▲▲▲
 
   Post({
     required this.id,
@@ -40,11 +42,24 @@ class Post {
     this.questCategory,
     required this.isBlessed,
     required this.isWisdomShared,
-    this.timeSpentMinutes, // ▼▼▼ この行を追加 ▼▼▼
+    // ▼▼▼ コンストラクタを修正 ▼▼▼
+    this.timeSpentHours,
+    // ▲▲▲ コンストラクタを修正 ▲▲▲
   });
 
   factory Post.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    // ▼▼▼ timeSpentHours の読み込みを追加 (int から double へのキャストも考慮) ▼▼▼
+    double? hours;
+    if (data['timeSpentHours'] != null) {
+      if (data['timeSpentHours'] is int) {
+        hours = (data['timeSpentHours'] as int).toDouble();
+      } else if (data['timeSpentHours'] is double) {
+        hours = data['timeSpentHours'] as double;
+      }
+    }
+    // ▲▲▲ timeSpentHours の読み込みを追加 ▲▲▲
+
     return Post(
       id: doc.id,
       uid: data['uid'] ?? '',
@@ -64,7 +79,9 @@ class Post {
       questCategory: data['questCategory'],
       isBlessed: data['isBlessed'] ?? false,
       isWisdomShared: data['isWisdomShared'] ?? false,
-      timeSpentMinutes: data['timeSpentMinutes'], // ▼▼▼ この行を追加 (null許容) ▼▼▼
+      // ▼▼▼ 修正した hours 変数を使用 ▼▼▼
+      timeSpentHours: hours,
+      // ▲▲▲ 修正した hours 変数を使用 ▲▲▲
     );
   }
 }

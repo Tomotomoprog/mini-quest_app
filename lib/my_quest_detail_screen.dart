@@ -590,14 +590,13 @@ class _PostHeader extends StatelessWidget {
                 ],
               )
             // 時間表示を追加
-            else if (post.timeSpentMinutes != null &&
-                post.timeSpentMinutes! > 0)
+            else if (post.timeSpentHours != null && post.timeSpentHours! > 0)
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.timer_outlined, size: 16, color: Colors.grey[600]),
                   const SizedBox(width: 4),
-                  Text('${post.timeSpentMinutes}分',
+                  Text('${post.timeSpentHours}分',
                       style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),

@@ -67,10 +67,13 @@ class UserProfile {
   final UserStats stats;
   final Avatar? avatar;
   final Map<String, String> equippedItems;
-  final int totalEffortMinutes;
-  final int currentStreak; // ▼▼▼ 追加 ▼▼▼
-  final int longestStreak; // ▼▼▼ 追加 ▼▼▼
-  final String? title; // ▼▼▼ 追加 ▼▼▼
+  // ▼▼▼ フィールド名と型を変更 ▼▼▼
+  final double totalEffortHours;
+  // ▲▲▲ フィールド名と型を変更 ▲▲▲
+  final int currentStreak;
+  final int longestStreak;
+  final Timestamp? lastPostDate;
+  final String? title;
 
   UserProfile({
     required this.uid,
@@ -80,14 +83,28 @@ class UserProfile {
     required this.stats,
     this.avatar,
     required this.equippedItems,
-    required this.totalEffortMinutes,
-    required this.currentStreak, // ▼▼▼ 追加 ▼▼▼
-    required this.longestStreak, // ▼▼▼ 追加 ▼▼▼
-    this.title, // ▼▼▼ 追加 ▼▼▼
+    // ▼▼▼ コンストラクタを修正 ▼▼▼
+    required this.totalEffortHours,
+    // ▲▲▲ コンストラクタを修正 ▲▲▲
+    required this.currentStreak,
+    required this.longestStreak,
+    this.lastPostDate,
+    this.title,
   });
 
   factory UserProfile.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    // ▼▼▼ totalEffortHours の読み込みを追加 (int から double へのキャストも考慮) ▼▼▼
+    double hours = 0.0;
+    if (data['totalEffortHours'] != null) {
+      if (data['totalEffortHours'] is int) {
+        hours = (data['totalEffortHours'] as int).toDouble();
+      } else if (data['totalEffortHours'] is double) {
+        hours = data['totalEffortHours'] as double;
+      }
+    }
+    // ▲▲▲ totalEffortHours の読み込みを追加 ▲▲▲
+
     return UserProfile(
       uid: doc.id,
       displayName: data['displayName'],
@@ -97,10 +114,13 @@ class UserProfile {
       avatar:
           data.containsKey('avatar') ? Avatar.fromMap(data['avatar']) : null,
       equippedItems: Map<String, String>.from(data['equippedItems'] ?? {}),
-      totalEffortMinutes: data['totalEffortMinutes'] ?? 0,
-      currentStreak: data['currentStreak'] ?? 0, // ▼▼▼ 追加 (デフォルト0) ▼▼▼
-      longestStreak: data['longestStreak'] ?? 0, // ▼▼▼ 追加 (デフォルト0) ▼▼▼
-      title: data['title'], // ▼▼▼ 追加 (null許容) ▼▼▼
+      // ▼▼▼ 修正した hours 変数を使用 (デフォルト 0.0) ▼▼▼
+      totalEffortHours: hours,
+      // ▲▲▲ 修正した hours 変数を使用 ▲▲▲
+      currentStreak: data['currentStreak'] ?? 0,
+      longestStreak: data['longestStreak'] ?? 0,
+      lastPostDate: data['lastPostDate'],
+      title: data['title'],
     );
   }
 }

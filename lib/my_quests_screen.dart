@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'models/my_quest.dart';
 import 'create_my_quest_screen.dart';
 import 'my_quest_detail_screen.dart';
-// import 'post_screen.dart'; // ← PostScreenのimportは削除またはコメントアウト
 import 'my_quest_post_screen.dart'; // ← 新しい画面をインポート
 
 class MyQuestsScreen extends StatelessWidget {
@@ -73,7 +72,6 @@ class MyQuestsScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16)),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
-                // ▼▼▼ タップ時の遷移先を変更 ▼▼▼
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
@@ -81,20 +79,16 @@ class MyQuestsScreen extends StatelessWidget {
                             const MyQuestPostScreen()), // initialQuestなしで開く
                   );
                 },
-                // ▲▲▲ タップ時の遷移先を変更 ▲▲▲
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Row(
                     children: [
-                      Icon(Icons.edit_note, // アイコンも変更推奨
-                          color: Theme.of(context).primaryColor,
-                          size: 28),
+                      Icon(Icons.edit_note,
+                          color: Theme.of(context).primaryColor, size: 28),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          // ▼▼▼ ラベルを変更 ▼▼▼
                           'マイクエストの進捗を記録',
-                          // ▲▲▲ ラベルを変更 ▲▲▲
                           style: Theme.of(context)
                               .textTheme
                               .titleMedium
@@ -157,14 +151,16 @@ class MyQuestsScreen extends StatelessWidget {
                   padding: const EdgeInsets.all(12.0),
                   itemCount: myQuests.length,
                   itemBuilder: (context, index) {
-                    final quest = myQuests[index];
+                    final quest = myQuests[index]; // ここで quest を定義
                     final startDate =
                         DateTime.tryParse(quest.startDate) ?? DateTime.now();
                     final endDate =
                         DateTime.tryParse(quest.endDate) ?? DateTime.now();
                     final totalDuration = endDate.difference(startDate).inDays;
-                    final elapsedDuration =
-                        DateTime.now().difference(startDate).inDays;
+                    final elapsedDuration = DateTime.now()
+                        .difference(startDate)
+                        .inDays
+                        .clamp(0, totalDuration); // 負にならないように
                     final progress = (totalDuration > 0)
                         ? (elapsedDuration / totalDuration).clamp(0.0, 1.0)
                         : 0.0;
@@ -179,8 +175,10 @@ class MyQuestsScreen extends StatelessWidget {
                         onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
+                              // ▼▼▼ パラメータ名を 'quest' に修正 ▼▼▼
                               builder: (context) =>
                                   MyQuestDetailScreen(quest: quest),
+                              // ▲▲▲ パラメータ名を 'quest' に修正 ▲▲▲
                             ),
                           );
                         },
@@ -267,7 +265,6 @@ class MyQuestsScreen extends StatelessWidget {
           ),
         ],
       ),
-      // ▼▼▼ FABはマイクエスト作成画面への遷移に変更 ▼▼▼
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.of(context).push(
@@ -278,7 +275,6 @@ class MyQuestsScreen extends StatelessWidget {
         tooltip: '新しいマイクエストを作成',
         child: const Icon(Icons.add),
       ),
-      // ▲▲▲ FABはマイクエスト作成画面への遷移に変更 ▲▲▲
     );
   }
 }

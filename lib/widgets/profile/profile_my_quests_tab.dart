@@ -1,3 +1,4 @@
+// lib/widgets/profile/profile_my_quests_tab.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/my_quest.dart';
@@ -50,12 +51,15 @@ class ProfileMyQuestsTab extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
           itemCount: myQuests.length,
           itemBuilder: (context, index) {
-            final quest = myQuests[index];
+            final quest = myQuests[index]; // ここで quest を定義
             final startDate =
                 DateTime.tryParse(quest.startDate) ?? DateTime.now();
             final endDate = DateTime.tryParse(quest.endDate) ?? DateTime.now();
             final totalDuration = endDate.difference(startDate).inDays;
-            final elapsedDuration = DateTime.now().difference(startDate).inDays;
+            final elapsedDuration = DateTime.now()
+                .difference(startDate)
+                .inDays
+                .clamp(0, totalDuration); // 負にならないように
             final progress = (totalDuration > 0)
                 ? (elapsedDuration / totalDuration).clamp(0.0, 1.0)
                 : 0.0;
@@ -70,7 +74,9 @@ class ProfileMyQuestsTab extends StatelessWidget {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
+                      // ▼▼▼ パラメータ名を 'quest' に修正 ▼▼▼
                       builder: (context) => MyQuestDetailScreen(quest: quest),
+                      // ▲▲▲ パラメータ名を 'quest' に修正 ▲▲▲
                     ),
                   );
                 },

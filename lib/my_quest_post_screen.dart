@@ -11,6 +11,37 @@ import 'models/my_quest.dart';
 import 'models/user_profile.dart' as model; // モデルのimportにエイリアスを設定
 import 'utils/progression.dart';
 
+// ヘルパー関数（クラス外または共通のユーティリティファイルに追加）
+bool _isSameDate(DateTime date1, DateTime date2) {
+  return date1.year == date2.year &&
+      date1.month == date2.month &&
+      date1.day == date2.day;
+}
+
+class DecimalTextInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    // ▼▼▼ 小数点が最初に来るのを防ぎ、小数点が多くても1つだけ許可する正規表現に修正 ▼▼▼
+    final regExp = RegExp(r'^\d*\.?\d*$');
+    // ▲▲▲ 小数点が最初に来るのを防ぎ、小数点が多くても1つだけ許可する正規表現に修正 ▲▲▲
+    final String newString = newValue.text;
+
+    if (regExp.hasMatch(newString)) {
+      // ▼▼▼ 複数の小数点を入力できないようにするチェックを追加 ▼▼▼
+      if (newString.contains('.') &&
+          newString.indexOf('.') != newString.lastIndexOf('.')) {
+        return oldValue;
+      }
+      // ▲▲▲ 複数の小数点を入力できないようにするチェックを追加 ▲▲▲
+      return newValue;
+    }
+    // ▼▼▼ 不正な文字が入力された場合、直前の有効な値に戻すように修正 ▼▼▼
+    return oldValue;
+    // ▲▲▲ 不正な文字が入力された場合、直前の有効な値に戻すように修正 ▲▲▲
+  }
+}
+
 class MyQuestPostScreen extends StatefulWidget {
   final MyQuest? initialQuest; // 特定のクエストに紐づける場合に受け取る
 
@@ -132,7 +163,7 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
       return;
 
     final text = _textController.text.trim();
-    final timeSpent = int.tryParse(_timeController.text.trim());
+    final double? timeSpentHours = double.tryParse(_timeController.text.trim());
 
     if (_selectedMyQuest == null) {
       ScaffoldMessenger.of(context)
@@ -144,9 +175,9 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
           const SnackBar(content: Text('投稿内容を入力するか、写真を選択してください。')));
       return;
     }
-    if (timeSpent == null || timeSpent <= 0) {
+    if (timeSpentHours == null || timeSpentHours <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('努力した時間(分)を正しく入力してください。')),
+        const SnackBar(content: Text('努力した時間(時間)を正しく入力してください。')),
       );
       return;
     }
@@ -181,25 +212,87 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
         'myQuestId': _selectedMyQuest?.id,
         'myQuestTitle': _selectedMyQuest?.title,
         'questCategory': questCategory,
-        'timeSpentMinutes': timeSpent,
+        'timeSpentHours': timeSpentHours, // 時間(double)を直接保存
         'isBlessed': false,
         'isWisdomShared': _shareWisdom,
       });
 
-      // ユーザーデータの更新（XP, Stats, 総努力時間）
+      // --- 連続記録更新ロジック (FieldValue.increment を使わない方法) START ---
       final userRef =
           FirebaseFirestore.instance.collection('users').doc(user.uid);
-      final updates = <String, dynamic>{
-        'xp': FieldValue.increment(10), // 基本XP
-        'totalEffortMinutes': FieldValue.increment(timeSpent), // 総努力時間を加算
-      };
-      if (questCategory != null) {
-        updates['stats.$questCategory'] = FieldValue.increment(1); // 基本Stat
-      }
-      // TODO: 努力時間に応じてXPやStatの増加量を調整するロジックをここに追加する
 
-      await userRef.set(
-          updates, SetOptions(merge: true)); // merge:true で既存フィールドを保持
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final userSnapshot = await transaction.get(userRef);
+        if (!userSnapshot.exists) {
+          throw Exception("ユーザードキュメントが存在しません！");
+        }
+        final currentProfile = model.UserProfile.fromFirestore(userSnapshot);
+
+        // --- Streak Calculation (変更なし) ---
+        int currentStreak = currentProfile.currentStreak;
+        int longestStreak = currentProfile.longestStreak;
+        final DateTime now = DateTime.now();
+        final DateTime today = DateTime(now.year, now.month, now.day);
+        DateTime? lastPostDateTime;
+        if (currentProfile.lastPostDate != null) {
+          lastPostDateTime = currentProfile.lastPostDate!.toDate();
+          final DateTime lastPostDay = DateTime(lastPostDateTime.year,
+              lastPostDateTime.month, lastPostDateTime.day);
+          final DateTime yesterday = today.subtract(const Duration(days: 1));
+          if (_isSameDate(lastPostDay, today)) {
+            /* No change */
+          } else if (_isSameDate(lastPostDay, yesterday)) {
+            currentStreak++;
+          } else {
+            currentStreak = 1;
+          }
+        } else {
+          currentStreak = 1;
+        }
+        if (currentStreak > longestStreak) {
+          longestStreak = currentStreak;
+        }
+        // --- End Streak Calculation ---
+
+        // --- 手動での加算計算 START ---
+        int newXp = currentProfile.xp + 10; // XPを加算
+
+        // totalEffortHours を手動で加算
+        double newTotalEffortHours = currentProfile.totalEffortHours;
+        if (timeSpentHours > 0) {
+          newTotalEffortHours += timeSpentHours;
+        }
+
+        // stats を手動で加算
+        Map<String, dynamic> newStats = {
+          'Life': currentProfile.stats.life,
+          'Study': currentProfile.stats.study,
+          'Physical': currentProfile.stats.physical,
+          'Social': currentProfile.stats.social,
+          'Creative': currentProfile.stats.creative,
+          'Mental': currentProfile.stats.mental,
+        };
+        if (questCategory != null && newStats.containsKey(questCategory)) {
+          // Firestoreから読み込んだ値が null の場合のフォールバックを追加
+          newStats[questCategory] = (newStats[questCategory] ?? 0) + 1;
+        }
+        // --- 手動での加算計算 END ---
+
+        // --- 最終的な更新データを作成 ---
+        final updates = <String, dynamic>{
+          'xp': newXp, // 計算後の値をセット
+          'currentStreak': currentStreak,
+          'longestStreak': longestStreak,
+          'lastPostDate': Timestamp.fromDate(now),
+          'stats': newStats, // 計算後のMapをセット
+          'totalEffortHours': newTotalEffortHours, // 計算後の値をセット
+        };
+        // --- 最終的な更新データを作成 END ---
+
+        // transaction.set(..., SetOptions(merge: true)) の代わりに update を使用
+        transaction.update(userRef, updates);
+      });
+      // --- 連続記録更新ロジック (FieldValue.increment を使わない方法) END ---
 
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -232,16 +325,17 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
             TextField(
               controller: _timeController,
               decoration: const InputDecoration(
-                labelText: '努力した時間（分）',
-                hintText: '例: 30',
+                labelText: '努力した時間（時間）',
+                hintText: '例: 1.5',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.all(Radius.circular(12)),
                 ),
                 prefixIcon: Icon(Icons.timer_outlined),
               ),
-              keyboardType: TextInputType.number,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: <TextInputFormatter>[
-                FilteringTextInputFormatter.digitsOnly
+                DecimalTextInputFormatter(),
               ],
             ),
             const SizedBox(height: 16),
