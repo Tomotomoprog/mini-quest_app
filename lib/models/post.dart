@@ -18,7 +18,8 @@ class Post {
   final String? questTitle;
   final String? questCategory;
   final bool isBlessed;
-  final bool isWisdomShared; // ▼▼▼ この行を追加 ▼▼▼
+  final bool isWisdomShared;
+  final int? timeSpentMinutes; // ▼▼▼ この行を追加 ▼▼▼
 
   Post({
     required this.id,
@@ -38,7 +39,8 @@ class Post {
     this.questTitle,
     this.questCategory,
     required this.isBlessed,
-    required this.isWisdomShared, // ▼▼▼ この行を追加 ▼▼▼
+    required this.isWisdomShared,
+    this.timeSpentMinutes, // ▼▼▼ この行を追加 ▼▼▼
   });
 
   factory Post.fromFirestore(DocumentSnapshot doc) {
@@ -61,7 +63,8 @@ class Post {
       questTitle: data['questTitle'],
       questCategory: data['questCategory'],
       isBlessed: data['isBlessed'] ?? false,
-      isWisdomShared: data['isWisdomShared'] ?? false, // ▼▼▼ この行を追加 ▼▼▼
+      isWisdomShared: data['isWisdomShared'] ?? false,
+      timeSpentMinutes: data['timeSpentMinutes'], // ▼▼▼ この行を追加 (null許容) ▼▼▼
     );
   }
 }

@@ -1,15 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_core/firebase_core.dart'; // スペースを追加
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-
+import 'package:google_fonts/google_fonts.dart'; // スペースを追加
 import 'auth_gate.dart';
 import 'firebase_options.dart';
-import 'friends_screen.dart';
+import 'friends_screen.dart'; // スペースを追加
 import 'models/quest.dart';
 import 'my_quests_screen.dart';
-import 'post_screen.dart';
+import 'post_screen.dart'; // PostScreenをインポート
 import 'profile_screen.dart';
 import 'timeline_screen.dart';
 import 'utils/quest_service.dart';
@@ -44,7 +43,7 @@ class MyApp extends StatelessWidget {
           elevation: 0,
           titleTextStyle: textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.bold,
-            color: primaryBlue,
+            color: primaryBlue, // AppBarタイトルはこの色に統一
           ),
         ),
         cardTheme: CardThemeData(
@@ -138,17 +137,11 @@ class _QuestListScreenState extends State<QuestListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final Color primaryBlue = Theme.of(context).colorScheme.primary;
-
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(
-          'MiniQuest',
-          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.bold),
-        ),
-        // ▼▼▼ 背景色を明示的に指定 ▼▼▼
+        title: const Text('MiniQuest'),
         backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.8),
-        // ▲▲▲ 背景色を明示的に指定 ▲▲▲
       ),
       body: FutureBuilder<List<Quest>>(
         future: _dailyQuestsFuture,
@@ -181,7 +174,7 @@ class _QuestListScreenState extends State<QuestListScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '毎日更新される3つの挑戦。達成を記録して、経験値やコイン、素材を手に入れよう！',
+                      '「日常を冒険に」毎日更新される三つのクエストに挑戦し、写真を撮ってみんなと共有しよう！',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
@@ -206,7 +199,6 @@ class _QuestListScreenState extends State<QuestListScreen> {
   }
 }
 
-// _QuestCardウィジェット (変更なし)
 class _QuestCard extends StatelessWidget {
   final Quest quest;
   const _QuestCard({required this.quest});
@@ -233,60 +225,49 @@ class _QuestCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 8.0),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAlias,
-      child: Container(
-        decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: color, width: 4)),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [color.withOpacity(0.05), Colors.white],
-            )),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Chip(
-                avatar: Icon(icon, color: color, size: 18),
-                label: Text(quest.tag),
-                backgroundColor: color.withOpacity(0.15),
-                side: BorderSide.none,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                quest.title,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                quest.description,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: Colors.grey[700]),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.check_circle_outline),
-                label: const Text('記録する'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: color,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 44),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  elevation: 1,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(MaterialPageRoute(
+              builder: (context) => PostScreen(dailyQuest: quest)));
+        },
+        child: Container(
+          decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: color, width: 4)),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [color.withOpacity(0.05), Colors.white],
+              )),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Chip(
+                  avatar: Icon(icon, color: color, size: 18),
+                  label: Text(quest.tag),
+                  backgroundColor: color.withOpacity(0.15),
+                  side: BorderSide.none,
                 ),
-                onPressed: () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (context) => PostScreen(dailyQuest: quest)));
-                },
-              )
-            ],
+                const SizedBox(height: 12),
+                Text(
+                  quest.title,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  quest.description,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(color: Colors.grey[700]),
+                ),
+              ],
+            ),
           ),
         ),
       ),

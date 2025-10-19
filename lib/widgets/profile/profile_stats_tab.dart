@@ -1,7 +1,8 @@
+// lib/widgets/profile/profile_stats_tab.dart
 import 'package:flutter/material.dart';
 import '../../models/user_profile.dart';
 import '../../models/ability.dart';
-import '../../growth_path_screen.dart';
+// import '../../growth_path_screen.dart'; // ← 削除
 
 class ProfileStatsTab extends StatelessWidget {
   final UserProfile userProfile;
@@ -26,17 +27,19 @@ class ProfileStatsTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ElevatedButton.icon(
-            icon: const Icon(Icons.trending_up),
-            label: const Text('成長の道へ'),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                    builder: (context) => const GrowthPathScreen()),
-              );
-            },
-          ),
-          const SizedBox(height: 24),
+          // === ▼▼▼ 「成長の道へ」ボタンを削除 ▼▼▼ ===
+          // ElevatedButton.icon(
+          //   icon: const Icon(Icons.trending_up),
+          //   label: const Text('成長の道へ'),
+          //   onPressed: () {
+          //     Navigator.of(context).push(
+          //       MaterialPageRoute(
+          //           builder: (context) => const GrowthPathScreen()),
+          //     );
+          //   },
+          // ),
+          // const SizedBox(height: 24),
+          // === ▲▲▲ 「成長の道へ」ボタンを削除 ▲▲▲ ===
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -45,7 +48,7 @@ class ProfileStatsTab extends StatelessWidget {
                   _ProgressBar(
                       label: 'Life',
                       value: userProfile.stats.life,
-                      max: 10,
+                      max: 10, // TODO: max値を動的にするか検討
                       color: categoryColors['Life']!),
                   const SizedBox(height: 16),
                   _ProgressBar(

@@ -1,10 +1,12 @@
+// lib/my_quests_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'models/my_quest.dart';
 import 'create_my_quest_screen.dart';
 import 'my_quest_detail_screen.dart';
-import 'post_screen.dart';
+// import 'post_screen.dart'; // ← PostScreenのimportは削除またはコメントアウト
+import 'my_quest_post_screen.dart'; // ← 新しい画面をインポート
 
 class MyQuestsScreen extends StatelessWidget {
   const MyQuestsScreen({super.key});
@@ -37,10 +39,7 @@ class MyQuestsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        // ▼▼▼ タイトルを追加、toolbarHeightを削除 ▼▼▼
         title: const Text('MiniQuest'),
-        // toolbarHeight: 0, // この行を削除
-        // ▲▲▲ タイトルを追加、toolbarHeightを削除 ▲▲▲
       ),
       body: Column(
         children: [
@@ -74,21 +73,28 @@ class MyQuestsScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16)),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
+                // ▼▼▼ タップ時の遷移先を変更 ▼▼▼
                 onTap: () {
                   Navigator.of(context).push(
-                    MaterialPageRoute(builder: (context) => const PostScreen()),
+                    MaterialPageRoute(
+                        builder: (context) =>
+                            const MyQuestPostScreen()), // initialQuestなしで開く
                   );
                 },
+                // ▲▲▲ タップ時の遷移先を変更 ▲▲▲
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Row(
                     children: [
-                      Icon(Icons.add_circle_outline,
-                          color: Theme.of(context).primaryColor, size: 28),
+                      Icon(Icons.edit_note, // アイコンも変更推奨
+                          color: Theme.of(context).primaryColor,
+                          size: 28),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          '今日の進捗を記録する',
+                          // ▼▼▼ ラベルを変更 ▼▼▼
+                          'マイクエストの進捗を記録',
+                          // ▲▲▲ ラベルを変更 ▲▲▲
                           style: Theme.of(context)
                               .textTheme
                               .titleMedium
@@ -261,6 +267,7 @@ class MyQuestsScreen extends StatelessWidget {
           ),
         ],
       ),
+      // ▼▼▼ FABはマイクエスト作成画面への遷移に変更 ▼▼▼
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.of(context).push(
@@ -271,6 +278,7 @@ class MyQuestsScreen extends StatelessWidget {
         tooltip: '新しいマイクエストを作成',
         child: const Icon(Icons.add),
       ),
+      // ▲▲▲ FABはマイクエスト作成画面への遷移に変更 ▲▲▲
     );
   }
 }

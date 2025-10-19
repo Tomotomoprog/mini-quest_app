@@ -1,3 +1,4 @@
+// lib/models/user_profile.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -65,7 +66,11 @@ class UserProfile {
   final int xp;
   final UserStats stats;
   final Avatar? avatar;
-  final Map<String, String> equippedItems; // ▼▼▼ この行を追加 ▼▼▼
+  final Map<String, String> equippedItems;
+  final int totalEffortMinutes;
+  final int currentStreak; // ▼▼▼ 追加 ▼▼▼
+  final int longestStreak; // ▼▼▼ 追加 ▼▼▼
+  final String? title; // ▼▼▼ 追加 ▼▼▼
 
   UserProfile({
     required this.uid,
@@ -74,7 +79,11 @@ class UserProfile {
     required this.xp,
     required this.stats,
     this.avatar,
-    required this.equippedItems, // ▼▼▼ この行を追加 ▼▼▼
+    required this.equippedItems,
+    required this.totalEffortMinutes,
+    required this.currentStreak, // ▼▼▼ 追加 ▼▼▼
+    required this.longestStreak, // ▼▼▼ 追加 ▼▼▼
+    this.title, // ▼▼▼ 追加 ▼▼▼
   });
 
   factory UserProfile.fromFirestore(DocumentSnapshot doc) {
@@ -87,8 +96,11 @@ class UserProfile {
       stats: UserStats.fromMap(data['stats'] ?? {}),
       avatar:
           data.containsKey('avatar') ? Avatar.fromMap(data['avatar']) : null,
-      // ▼▼▼ この行を追加 ▼▼▼
       equippedItems: Map<String, String>.from(data['equippedItems'] ?? {}),
+      totalEffortMinutes: data['totalEffortMinutes'] ?? 0,
+      currentStreak: data['currentStreak'] ?? 0, // ▼▼▼ 追加 (デフォルト0) ▼▼▼
+      longestStreak: data['longestStreak'] ?? 0, // ▼▼▼ 追加 (デフォルト0) ▼▼▼
+      title: data['title'], // ▼▼▼ 追加 (null許容) ▼▼▼
     );
   }
 }

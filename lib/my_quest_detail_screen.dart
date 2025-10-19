@@ -1,3 +1,4 @@
+// lib/my_quest_detail_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'utils/progression.dart';
 import 'utils/ability_service.dart';
 import 'comment_screen.dart';
 import 'profile_screen.dart';
+import 'my_quest_post_screen.dart'; // ← 新しい画面をインポート
 
 class MyQuestDetailScreen extends StatefulWidget {
   final MyQuest quest;
@@ -74,6 +76,11 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
     final isLiked = _likedPostIds.contains(postId);
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
+      final postSnapshot = await transaction.get(postRef); // Postデータを取得
+      if (!postSnapshot.exists) return;
+      final post = Post.fromFirestore(postSnapshot);
+      final shouldNotify = !isLiked && post.uid != user.uid; // 通知が必要か判断
+
       if (isLiked) {
         transaction.delete(likeRef);
         transaction.update(postRef, {'likeCount': FieldValue.increment(-1)});
@@ -81,6 +88,24 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
         transaction.set(likeRef,
             {'uid': user.uid, 'createdAt': FieldValue.serverTimestamp()});
         transaction.update(postRef, {'likeCount': FieldValue.increment(1)});
+        // 通知を作成 (shouldNotifyがtrueの場合)
+        if (shouldNotify) {
+          final notificationRef =
+              FirebaseFirestore.instance.collection('notifications').doc();
+          transaction.set(notificationRef, {
+            'type': 'like',
+            'fromUserId': user.uid,
+            'fromUserName': user.displayName ?? '名無しさん',
+            'fromUserAvatar': user.photoURL,
+            'postId': post.id,
+            'postTextSnippet': post.text.length > 50
+                ? '${post.text.substring(0, 50)}...'
+                : post.text,
+            'targetUserId': post.uid, // 投稿主のID
+            'createdAt': FieldValue.serverTimestamp(),
+            'isRead': false,
+          });
+        }
       }
     });
     setState(() {
@@ -107,6 +132,7 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
               SetOptions(merge: true));
         });
         break;
+      // 他のアビリティの処理が必要な場合はここに追加
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -196,7 +222,6 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
         ],
       ),
       body: CustomScrollView(
-        // ▼▼▼ Paddingを追加して、下部のボタンとコンテンツが重ならないように調整 ▼▼▼
         slivers: [
           SliverPadding(
             padding: const EdgeInsets.only(bottom: 80), // ボタンの高さを考慮
@@ -208,10 +233,16 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
                   stream: FirebaseFirestore.instance
                       .collection('posts')
                       .where('myQuestId', isEqualTo: widget.quest.id)
+                      .orderBy('createdAt', descending: true) // 新しい順にソート
                       .snapshots(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      // エラーハンドリングを追加
+                      return Center(
+                          child: Text('投稿の読み込みに失敗しました: ${snapshot.error}'));
                     }
                     if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                       return const Center(
@@ -225,7 +256,7 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
                     final posts = snapshot.data!.docs
                         .map((doc) => Post.fromFirestore(doc))
                         .toList();
-                    posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                    // posts.sort((a, b) => b.createdAt.compareTo(a.createdAt)); // Firestore側でソートするので不要
 
                     // Columnを使って複数の投稿カードを表示
                     return Column(
@@ -261,8 +292,8 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
                                       ],
                                     ),
                                   ))
-                              .toList() ??
-                          [], // postsがnullの場合も考慮
+                              .toList() ?? // postsがnullの場合も考慮 (Firestore streamでは通常不要だが念のため)
+                          [],
                     );
                   },
                 ),
@@ -271,9 +302,34 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
           ),
         ],
       ),
-      // ▲▲▲ Paddingを追加 ▲▲▲
 
-      // ▼▼▼ 達成ボタンを bottomNavigationBar に移動 ▼▼▼
+      // ▼▼▼ FABを追加 ▼▼▼
+      floatingActionButton: StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('my_quests')
+              .doc(widget.quest.id)
+              .snapshots(),
+          builder: (context, questSnapshot) {
+            if (!questSnapshot.hasData) return const SizedBox.shrink();
+            final currentQuest = MyQuest.fromFirestore(questSnapshot.data!);
+            // 挑戦中の場合のみ記録ボタンを表示
+            if (currentQuest.status == 'active') {
+              return FloatingActionButton.extended(
+                onPressed: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (context) => MyQuestPostScreen(
+                          initialQuest: widget.quest) // このクエストを渡す
+                      ));
+                },
+                icon: const Icon(Icons.add_task),
+                label: const Text('進捗を記録'),
+              );
+            } else {
+              return const SizedBox.shrink(); // 達成済みならボタン非表示
+            }
+          }),
+      // ▲▲▲ FABを追加 ▲▲▲
+
       bottomNavigationBar: StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance
               .collection('my_quests')
@@ -314,7 +370,6 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
                   )));
             }
           }),
-      // ▲▲▲ 達成ボタンを bottomNavigationBar に移動 ▲▲▲
     );
   }
 }
@@ -371,10 +426,14 @@ class _QuestDetailHeader extends StatelessWidget {
     final startDate = DateTime.tryParse(quest.startDate) ?? DateTime.now();
     final endDate = DateTime.tryParse(quest.endDate) ?? DateTime.now();
     final totalDuration = endDate.difference(startDate).inDays;
-    final elapsedDuration = DateTime.now().difference(startDate).inDays;
+    final elapsedDuration = DateTime.now()
+        .difference(startDate)
+        .inDays
+        .clamp(0, totalDuration); // 経過日数が負または合計を超えないように
     final progress = (totalDuration > 0)
         ? (elapsedDuration / totalDuration).clamp(0.0, 1.0)
         : 0.0;
+    final remainingDays = totalDuration - elapsedDuration;
 
     return Container(
       padding: const EdgeInsets.all(16.0),
@@ -421,7 +480,10 @@ class _QuestDetailHeader extends StatelessWidget {
                         children: [
                           Text(quest.startDate.replaceAll('-', '/'),
                               style: Theme.of(context).textTheme.bodySmall),
-                          Text('残り ${totalDuration - elapsedDuration} 日',
+                          Text(
+                              remainingDays >= 0
+                                  ? '残り $remainingDays 日'
+                                  : '期間終了', // 終了日を過ぎていたら表示変更
                               style: Theme.of(context)
                                   .textTheme
                                   .bodySmall
@@ -515,7 +577,7 @@ class _PostHeader extends StatelessWidget {
                 ],
               ),
             ),
-            if (post.isWisdomShared)
+            if (post.isWisdomShared) // 叡智の共有アイコン表示
               const Row(
                 children: [
                   Icon(Icons.lightbulb,
@@ -527,6 +589,18 @@ class _PostHeader extends StatelessWidget {
                           fontWeight: FontWeight.bold)),
                 ],
               )
+            // 時間表示を追加
+            else if (post.timeSpentMinutes != null &&
+                post.timeSpentMinutes! > 0)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.timer_outlined, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Text('${post.timeSpentMinutes}分',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
           ],
         ),
       ),
@@ -545,20 +619,8 @@ class _PostContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (post.myQuestTitle != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              margin: const EdgeInsets.only(bottom: 8),
-              decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.blue.shade200)),
-              child: Text('🚀 ${post.myQuestTitle}',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade800,
-                      fontSize: 12)),
-            ),
+          // myQuestTitleの表示は削除（詳細画面なので不要）
+          // if (post.myQuestTitle != null) ...
           if (post.text.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 8.0),
@@ -620,6 +682,7 @@ class _PostActions extends StatelessWidget {
           ),
           Text(post.commentCount.toString(),
               style: TextStyle(color: Colors.grey[600])),
+          // 自分の投稿でなく、かつ自分がアビリティを持っている場合のみボタン表示
           if (!isMyPost && myAbilities.isNotEmpty) _buildAbilityButton(context),
           const Spacer(),
           Text(
@@ -633,26 +696,34 @@ class _PostActions extends StatelessWidget {
   }
 
   Widget _buildAbilityButton(BuildContext context) {
+    // 使えるアビリティが複数ある場合、選択式にする必要があるが、
+    // 現状は各クラス1つなので、最初のものを表示する
+    if (myAbilities.isEmpty) return const SizedBox.shrink();
+
     final ability = myAbilities.first;
     final bool isUsed = usedAbilityName == ability.name;
+    // アビリティ使用不可条件
     bool isDisabledByState =
         isUsed || (ability.name == '祝福の風' && post.isBlessed);
 
     IconData icon = ability.icon;
     Color? color;
 
+    // 祝福済みの場合の表示調整
     if (ability.name == '祝福の風' && post.isBlessed) {
-      icon = Icons.star;
-      color = Colors.amber;
+      icon = Icons.star; // 祝福済みアイコン
+      color = Colors.amber; // 祝福済み色
+      isDisabledByState = true; // 祝福済みなら押せない
     }
 
     return IconButton(
       icon: Icon(icon,
           color: isDisabledByState
-              ? color ?? Colors.grey
-              : Theme.of(context).colorScheme.primary),
+              ? color ?? Colors.grey // 無効状態の色
+              : Theme.of(context).colorScheme.primary), // 有効状態の色
       tooltip: ability.name,
-      onPressed: isDisabledByState ? null : () => onUseAbility(ability),
+      onPressed:
+          isDisabledByState ? null : () => onUseAbility(ability), // 無効なら押せない
     );
   }
 }
