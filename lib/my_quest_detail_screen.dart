@@ -596,7 +596,7 @@ class _PostHeader extends StatelessWidget {
                 children: [
                   Icon(Icons.timer_outlined, size: 16, color: Colors.grey[600]),
                   const SizedBox(width: 4),
-                  Text('${post.timeSpentHours}分',
+                  Text('${post.timeSpentHours}時間',
                       style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
