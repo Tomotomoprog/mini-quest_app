@@ -6,11 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/post.dart';
 import '../../comment_screen.dart';
-import '../../profile_screen.dart';
+// import '../../profile_screen.dart'; // (不要)
 import '../../models/user_profile.dart';
-// import 'utils/ability_service.dart'; // 削除済
 import '../../utils/progression.dart';
-// import 'models/ability.dart'; // 削除済
+import '../../cheer_list_screen.dart'; // ◀◀◀ cheer_list_screen をインポート
 
 class ProfilePostsTab extends StatefulWidget {
   final String userId;
@@ -21,7 +20,7 @@ class ProfilePostsTab extends StatefulWidget {
 }
 
 class _ProfilePostsTabState extends State<ProfilePostsTab> {
-  Set<String> _likedPostIds = {};
+  Set<String> _likedPostIds = {}; // (DB構造は変えないので変数名はそのまま)
   UserProfile? _currentUserProfile;
 
   @override
@@ -37,7 +36,7 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
     final userDocFuture =
         FirebaseFirestore.instance.collection('users').doc(user.uid).get();
     final likesFuture = FirebaseFirestore.instance
-        .collectionGroup('likes')
+        .collectionGroup('likes') // (DB構造は 'likes' のまま)
         .where('uid', isEqualTo: user.uid)
         .get();
 
@@ -61,26 +60,52 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
     }
   }
 
+  // ▼▼▼ 通知タイプを 'cheer' に変更 ▼▼▼
   Future<void> _toggleLike(String postId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final postRef = FirebaseFirestore.instance.collection('posts').doc(postId);
-    final likeRef = postRef.collection('likes').doc(user.uid);
+    final likeRef =
+        postRef.collection('likes').doc(user.uid); // (DB構造は 'likes' のまま)
     final isLiked = _likedPostIds.contains(postId);
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
       final postSnapshot = await transaction.get(postRef);
       if (!postSnapshot.exists) return;
 
+      final post = Post.fromFirestore(postSnapshot);
+      final shouldNotify = !isLiked && post.uid != user.uid;
+
       if (isLiked) {
         transaction.delete(likeRef);
-        transaction.update(postRef, {'likeCount': FieldValue.increment(-1)});
+        transaction.update(postRef,
+            {'likeCount': FieldValue.increment(-1)}); // (DB構造は 'likeCount' のまま)
       } else {
         transaction.set(likeRef,
             {'uid': user.uid, 'createdAt': FieldValue.serverTimestamp()});
-        transaction.update(postRef, {'likeCount': FieldValue.increment(1)});
+        transaction.update(postRef,
+            {'likeCount': FieldValue.increment(1)}); // (DB構造は 'likeCount' のまま)
+
+        if (shouldNotify) {
+          final notificationRef =
+              FirebaseFirestore.instance.collection('notifications').doc();
+          transaction.set(notificationRef, {
+            'type': 'cheer', // ◀◀◀ 通知タイプを 'cheer' に変更
+            'fromUserId': user.uid,
+            'fromUserName': user.displayName ?? '名無しさん',
+            'fromUserAvatar': user.photoURL,
+            'postId': post.id,
+            'postTextSnippet': post.text.length > 50
+                ? '${post.text.substring(0, 50)}...'
+                : post.text,
+            'targetUserId': post.uid,
+            'createdAt': FieldValue.serverTimestamp(),
+            'isRead': false,
+          });
+        }
       }
     });
+    // ▲▲▲
 
     setState(() {
       if (isLiked) {
@@ -230,12 +255,8 @@ class _PostContent extends StatelessWidget {
               padding: const EdgeInsets.only(top: 4.0, bottom: 8.0),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12.0),
-                // ▼▼▼ ここが修正点です ▼▼▼
                 child: Image.network(post.photoURL!,
-                    width: double.infinity,
-                    // height: 200, // ◀◀◀ この行を削除
-                    fit: BoxFit.cover),
-                // ▲▲▲
+                    width: double.infinity, fit: BoxFit.cover),
               ),
             ),
         ],
@@ -244,6 +265,7 @@ class _PostContent extends StatelessWidget {
   }
 }
 
+// ▼▼▼ _PostActions ウィジェットを修正 (UIのみ) ▼▼▼
 class _PostActions extends StatelessWidget {
   final Post post;
   final bool isLiked;
@@ -257,6 +279,16 @@ class _PostActions extends StatelessWidget {
     required this.onLike,
   });
 
+  void _showLikeList(BuildContext context) {
+    // (DB構造は 'likeCount' のまま)
+    if (post.likeCount > 0) {
+      Navigator.of(context).push(MaterialPageRoute(
+        // ▼▼▼ CheerListScreen に変更 ▼▼▼
+        builder: (context) => CheerListScreen(postId: post.id),
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final Color iconColor = Colors.grey[500]!;
@@ -267,11 +299,25 @@ class _PostActions extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border,
+            // ▼▼▼ アイコンを応援 (炎) に変更 ▼▼▼
+            icon: Icon(
+                isLiked
+                    ? Icons.local_fire_department // 押されている
+                    : Icons.local_fire_department_outlined, // 押されていない
                 color: isLiked ? accentColor : iconColor),
             onPressed: onLike,
           ),
-          Text(post.likeCount.toString(), style: TextStyle(color: iconColor)),
+          InkWell(
+            onTap: () => _showLikeList(context),
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
+              // ▼▼▼ post.likeCount を参照 (DB構造はそのまま) ▼▼▼
+              child: Text(post.likeCount.toString(),
+                  style: TextStyle(color: iconColor)),
+            ),
+          ),
           const SizedBox(width: 8),
           IconButton(
             icon: Icon(Icons.chat_bubble_outline, color: iconColor),

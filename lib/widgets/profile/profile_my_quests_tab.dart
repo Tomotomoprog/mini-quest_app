@@ -1,7 +1,7 @@
 // lib/widgets/profile/profile_my_quests_tab.dart
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // ◀◀◀ FirebaseAuth をインポート
+import 'package:flutter/material.dart';
 import '../../models/my_quest.dart';
 import '../../my_quest_detail_screen.dart';
 import '../../completed_quests_screen.dart'; // ◀◀◀ 達成済み画面をインポート
@@ -74,6 +74,46 @@ class _CategoryQuestCard extends StatelessWidget {
     required this.color,
   });
 
+  // ▼▼▼ 応援数を集計するウィジェットを新設 ▼▼▼
+  Widget _buildTotalCheerCount(String myQuestId) {
+    return FutureBuilder<QuerySnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('posts')
+          .where('myQuestId', isEqualTo: myQuestId)
+          .get(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 2));
+        }
+        if (snapshot.hasError) {
+          return const Icon(Icons.error_outline, color: Colors.red, size: 16);
+        }
+
+        int totalCheers = 0;
+        for (var doc in snapshot.data!.docs) {
+          // ▼▼▼ エラー箇所を修正 ▼▼▼
+          final data = doc.data() as Map<String, dynamic>;
+          final likeCount = data['likeCount'] as num? ?? 0; // num として取得
+          totalCheers += likeCount.toInt(); // .toInt() で int に変換
+          // ▲▲▲
+        }
+
+        return Text(
+          totalCheers.toString(),
+          style: TextStyle(
+            color: Colors.pink[200], // 応援アイコンと同じ色
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        );
+      },
+    );
+  }
+  // ▲▲▲
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -119,7 +159,13 @@ class _CategoryQuestCard extends StatelessWidget {
             ),
             Column(
               children: quests.map((quest) {
-                return _MyQuestCard(quest: quest, color: color);
+                // ▼▼▼ _MyQuestCard に _buildTotalCheerCount を渡す ▼▼▼
+                return _MyQuestCard(
+                  quest: quest,
+                  color: color,
+                  totalCheerWidget: _buildTotalCheerCount(quest.id),
+                );
+                // ▲▲▲
               }).toList(),
             ),
           ],
@@ -133,8 +179,13 @@ class _CategoryQuestCard extends StatelessWidget {
 class _MyQuestCard extends StatelessWidget {
   final MyQuest quest;
   final Color color;
+  final Widget totalCheerWidget; // ◀◀◀ 応援数ウィジェットを受け取る
 
-  const _MyQuestCard({required this.quest, required this.color});
+  const _MyQuestCard({
+    required this.quest,
+    required this.color,
+    required this.totalCheerWidget, // ◀◀◀
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -171,6 +222,23 @@ class _MyQuestCard extends StatelessWidget {
                   ),
             ),
             const SizedBox(height: 12),
+            // ▼▼▼ 応援数をプログレスバーの上に追加 ▼▼▼
+            Row(
+              children: [
+                Icon(Icons.local_fire_department,
+                    color: Colors.pink[200], size: 16),
+                const SizedBox(width: 4),
+                totalCheerWidget, // ◀◀◀ 応援数ウィジェットを表示
+                const Spacer(),
+                if (quest.status == 'completed')
+                  Icon(Icons.check_circle, color: Colors.green[600], size: 16)
+                else
+                  Icon(Icons.hourglass_top,
+                      color: secondaryTextColor, size: 16),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // ▲▲▲
             LinearProgressIndicator(
               value: progress,
               backgroundColor: Colors.grey[800],
@@ -255,14 +323,10 @@ class ProfileMyQuestsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ▼▼▼ my_quests_screen.dart の build ロジックを移植・修正 ▼▼▼
     final Color secondaryTextColor = Colors.grey[400]!;
 
-    // プロフィールタブ内はスクロール不要な場合が多いため、
-    // SingleChildScrollView ではなく ListView を使用
     return ListView(
       children: [
-        // 「達成済みのマイクエスト」ボタンのみ配置
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
           child: _ActionButton(
@@ -271,13 +335,11 @@ class ProfileMyQuestsTab extends StatelessWidget {
             color: Colors.green,
             onTap: () {
               Navigator.of(context).push(MaterialPageRoute(
-                // ◀◀◀ 遷移先を CompletedQuestsScreen に修正
                 builder: (context) => const CompletedQuestsScreen(),
               ));
             },
           ),
         ),
-
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
           child: Text(
@@ -287,11 +349,10 @@ class ProfileMyQuestsTab extends StatelessWidget {
                 ),
           ),
         ),
-
         StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('my_quests')
-              .where('uid', isEqualTo: userId) // ◀◀◀ 引数の userId を使用
+              .where('uid', isEqualTo: userId)
               .where('status', isEqualTo: 'active')
               .orderBy('createdAt', descending: true)
               .snapshots(),
@@ -316,7 +377,6 @@ class ProfileMyQuestsTab extends StatelessWidget {
                           size: 60, color: secondaryTextColor),
                       const SizedBox(height: 16),
                       Text(
-                        // ◀◀◀ ログインユーザーか否かでテキストを変更
                         userId == FirebaseAuth.instance.currentUser?.uid
                             ? '挑戦中のクエストはありません'
                             : '挑戦中のクエストはありません',
@@ -341,8 +401,6 @@ class ProfileMyQuestsTab extends StatelessWidget {
               }
             }
 
-            // ListView の中に Column を直接入れると描画エラーになるため、
-            // Column ではなく ListView.builder や Column(shrinkWrap: true) を使う
             return Column(
               children: categoryOrder.map((category) {
                 final questsInCategory = groupedQuests[category]!;
@@ -362,6 +420,5 @@ class ProfileMyQuestsTab extends StatelessWidget {
         const SizedBox(height: 20),
       ],
     );
-    // ▲▲▲
   }
 }

@@ -1,3 +1,4 @@
+// lib/timeline_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'comment_screen.dart';
 import 'profile_screen.dart';
 import 'models/user_profile.dart';
 import 'utils/progression.dart';
+import 'cheer_list_screen.dart'; // ◀◀◀ cheer_list_screen をインポート
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -16,7 +18,7 @@ class TimelineScreen extends StatefulWidget {
 }
 
 class _TimelineScreenState extends State<TimelineScreen> {
-  Set<String> _likedPostIds = {};
+  Set<String> _likedPostIds = {}; // (DB構造は変えないので変数名はそのまま)
   UserProfile? _currentUserProfile;
 
   List<String> _friendIds = [];
@@ -39,7 +41,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
         FirebaseFirestore.instance.collection('users').doc(user.uid).get();
 
     final likesFuture = FirebaseFirestore.instance
-        .collectionGroup('likes')
+        .collectionGroup('likes') // (DB構造は変えないので 'likes' のまま)
         .where('uid', isEqualTo: user.uid)
         .get();
 
@@ -72,7 +74,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
       final friendIds = friendsSnapshot.docs
           .map((doc) {
-            final data = doc.data() as Map<String, dynamic>; // data() をキャスト
+            final data = doc.data() as Map<String, dynamic>;
             final userIds = data['userIds'] as List;
             return userIds.firstWhere((id) => id != user.uid,
                 orElse: () => null);
@@ -87,11 +89,13 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
   }
 
+  // ▼▼▼ 通知タイプを 'cheer' に変更 ▼▼▼
   Future<void> _toggleLike(String postId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final postRef = FirebaseFirestore.instance.collection('posts').doc(postId);
-    final likeRef = postRef.collection('likes').doc(user.uid);
+    final likeRef =
+        postRef.collection('likes').doc(user.uid); // (DB構造は 'likes' のまま)
     final isLiked = _likedPostIds.contains(postId);
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
@@ -103,17 +107,19 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
       if (isLiked) {
         transaction.delete(likeRef);
-        transaction.update(postRef, {'likeCount': FieldValue.increment(-1)});
+        transaction.update(postRef,
+            {'likeCount': FieldValue.increment(-1)}); // (DB構造は 'likeCount' のまま)
       } else {
         transaction.set(likeRef,
             {'uid': user.uid, 'createdAt': FieldValue.serverTimestamp()});
-        transaction.update(postRef, {'likeCount': FieldValue.increment(1)});
+        transaction.update(postRef,
+            {'likeCount': FieldValue.increment(1)}); // (DB構造は 'likeCount' のまま)
 
         if (shouldNotify) {
           final notificationRef =
               FirebaseFirestore.instance.collection('notifications').doc();
           transaction.set(notificationRef, {
-            'type': 'like',
+            'type': 'cheer', // ◀◀◀ 通知タイプを 'cheer' に変更
             'fromUserId': user.uid,
             'fromUserName': user.displayName ?? '名無しさん',
             'fromUserAvatar': user.photoURL,
@@ -128,6 +134,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
         }
       }
     });
+    // ▲▲▲
 
     setState(() {
       if (isLiked) {
@@ -153,23 +160,18 @@ class _TimelineScreenState extends State<TimelineScreen> {
       );
     }
 
-    // ▼▼▼ 自分のIDとフレンドIDをSet(集合)にする ▼▼▼
-    // Set を使うことで .contains() のチェックが高速になります
     final Set<String> feedUserIdsSet = {currentUserId, ..._friendIds};
-    // ▲▲▲
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('MiniQuest'),
       ),
       body: StreamBuilder<QuerySnapshot>(
-        // ▼▼▼ クエリを単純な「最新順」のみに変更 ▼▼▼
         stream: FirebaseFirestore.instance
             .collection('posts')
             .orderBy('createdAt', descending: true)
-            .limit(100) // 投稿が多すぎるとアプリが重くなるため、最新100件に制限
+            .limit(100)
             .snapshots(),
-        // ▲▲▲
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -182,28 +184,23 @@ class _TimelineScreenState extends State<TimelineScreen> {
             return const Center(child: Text('まだ投稿がありません。'));
           }
 
-          // ▼▼▼ 取得した全投稿を、クライアント側でフィルタリング ▼▼▼
           final allPosts = snapshot.data!.docs
               .map((doc) => Post.fromFirestore(doc))
               .toList();
 
           final posts = allPosts.where((post) {
-            // 投稿のUIDが、自分またはフレンドのIDセットに含まれているか
             return feedUserIdsSet.contains(post.uid);
           }).toList();
-          // ▲▲▲
 
-          // ▼▼▼ フィルタリング後の投稿が0件の場合の表示 ▼▼▼
           if (posts.isEmpty) {
             return const Center(child: Text('フレンドの投稿はまだありません。'));
           }
-          // ▲▲▲
 
           return ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-            itemCount: posts.length, // フィルタリング後のリストを使用
+            itemCount: posts.length,
             itemBuilder: (context, index) {
-              final post = posts[index]; // フィルタリング後のリストを使用
+              final post = posts[index];
               return Card(
                 elevation: 2,
                 margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -217,9 +214,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     _PostContent(post: post),
                     _PostActions(
                       post: post,
-                      isLiked: _likedPostIds.contains(post.id),
+                      isLiked: _likedPostIds.contains(post.id), // (変数名はそのまま)
                       isMyPost: post.uid == _currentUserProfile?.uid,
-                      onLike: () => _toggleLike(post.id),
+                      onLike: () => _toggleLike(post.id), // (関数名はそのまま)
                     ),
                   ],
                 ),
@@ -232,7 +229,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
   }
 }
 
-// (これ以下の _PostHeader, _PostContent, _PostActions ウィジェットは変更ありません)
 class _PostHeader extends StatelessWidget {
   final Post post;
   const _PostHeader({required this.post});
@@ -335,6 +331,7 @@ class _PostContent extends StatelessWidget {
   }
 }
 
+// ▼▼▼ _PostActions ウィジェットを修正 (UIのみ) ▼▼▼
 class _PostActions extends StatelessWidget {
   final Post post;
   final bool isLiked;
@@ -348,6 +345,16 @@ class _PostActions extends StatelessWidget {
     required this.onLike,
   });
 
+  void _showLikeList(BuildContext context) {
+    // (DB構造は 'likeCount' のまま)
+    if (post.likeCount > 0) {
+      Navigator.of(context).push(MaterialPageRoute(
+        // ▼▼▼ CheerListScreen に変更 ▼▼▼
+        builder: (context) => CheerListScreen(postId: post.id),
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final Color iconColor = Colors.grey[500]!;
@@ -358,11 +365,25 @@ class _PostActions extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border,
+            // ▼▼▼ アイコンを応援 (炎) に変更 ▼▼▼
+            icon: Icon(
+                isLiked
+                    ? Icons.local_fire_department // 押されている
+                    : Icons.local_fire_department_outlined, // 押されていない
                 color: isLiked ? accentColor : iconColor),
             onPressed: onLike,
           ),
-          Text(post.likeCount.toString(), style: TextStyle(color: iconColor)),
+          InkWell(
+            onTap: () => _showLikeList(context),
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
+              // ▼▼▼ post.likeCount を参照 (DB構造はそのまま) ▼▼▼
+              child: Text(post.likeCount.toString(),
+                  style: TextStyle(color: iconColor)),
+            ),
+          ),
           const SizedBox(width: 8),
           IconButton(
             icon: Icon(Icons.chat_bubble_outline, color: iconColor),
