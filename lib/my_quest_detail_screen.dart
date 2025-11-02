@@ -6,12 +6,11 @@ import 'package:intl/intl.dart';
 import 'models/my_quest.dart';
 import 'models/post.dart';
 import 'models/user_profile.dart';
-import 'models/ability.dart';
+import 'models/friendship.dart'; // ◀◀◀ インポート
 import 'utils/progression.dart';
-import 'utils/ability_service.dart';
 import 'comment_screen.dart';
 import 'profile_screen.dart';
-import 'my_quest_post_screen.dart'; // ← 新しい画面をインポート
+import 'my_quest_post_screen.dart';
 
 class MyQuestDetailScreen extends StatefulWidget {
   final MyQuest quest;
@@ -22,21 +21,31 @@ class MyQuestDetailScreen extends StatefulWidget {
   State<MyQuestDetailScreen> createState() => _MyQuestDetailScreenState();
 }
 
+// ▼▼▼ StatefulWidget に変更し、State を定義 ▼▼▼
 class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
   Set<String> _likedPostIds = {};
   UserProfile? _currentUserProfile;
-  List<Ability> _myAbilities = [];
-  final Map<String, String> _usedAbilitiesOnPosts = {};
+
+  // ▼▼▼ 状態変数を追加 ▼▼▼
+  FriendshipStatus _friendshipStatus = FriendshipStatus.none;
+  bool _isLoadingStatus = true;
+  String? _myId;
+  // ▲▲▲
 
   @override
   void initState() {
     super.initState();
-    _fetchMyData();
+    _myId = FirebaseAuth.instance.currentUser?.uid;
+    _fetchMyDataAndFriendship();
   }
 
-  Future<void> _fetchMyData() async {
+  // ▼▼▼ フレンド関係も同時にチェックするロジックに変更 ▼▼▼
+  Future<void> _fetchMyDataAndFriendship() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      setState(() => _isLoadingStatus = false);
+      return;
+    }
 
     final userDocFuture =
         FirebaseFirestore.instance.collection('users').doc(user.uid).get();
@@ -45,7 +54,11 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
         .where('uid', isEqualTo: user.uid)
         .get();
 
-    final responses = await Future.wait([userDocFuture, likesFuture]);
+    final responses = await Future.wait([
+      userDocFuture,
+      likesFuture,
+      _checkFriendshipStatus(), // ◀◀◀ フレンドステータスをチェック
+    ]);
 
     final userDoc = responses[0] as DocumentSnapshot;
     final likesSnapshot = responses[1] as QuerySnapshot;
@@ -53,20 +66,58 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
     if (mounted) {
       if (userDoc.exists) {
         final profile = UserProfile.fromFirestore(userDoc);
-        final level = computeLevel(profile.xp);
-        final jobInfo = computeJob(profile.stats, level);
         setState(() {
           _currentUserProfile = profile;
-          _myAbilities = AbilityService.getAbilitiesForClass(jobInfo.title);
         });
       }
       setState(() {
         _likedPostIds = likesSnapshot.docs
             .map((doc) => doc.reference.parent.parent!.id)
             .toSet();
+        _isLoadingStatus = false; // すべての読み込みが完了
       });
     }
   }
+
+  // フレンドステータスを確認する関数
+  Future<FriendshipStatus> _checkFriendshipStatus() async {
+    final otherId = widget.quest.uid;
+
+    if (_myId == null) return FriendshipStatus.none;
+    if (_myId == otherId) return FriendshipStatus.accepted; // 自分のクエスト
+
+    final db = FirebaseFirestore.instance;
+    final query = db
+        .collection('friendships')
+        .where('userIds', arrayContains: _myId)
+        // .where('userIds', arrayContains: otherId) // whereIn/arrayContainsは1回まで
+        .get();
+
+    final results = await query;
+
+    FriendshipStatus status = FriendshipStatus.none;
+
+    for (var doc in results.docs) {
+      final userIds = doc.data()['userIds'] as List;
+      if (userIds.contains(otherId)) {
+        final docStatus = doc.data()['status'] as String;
+        if (docStatus == 'accepted') {
+          status = FriendshipStatus.accepted;
+          break; // 承認済みが最優先
+        } else if (docStatus == 'pending' || docStatus == 'quest_pending') {
+          status = FriendshipStatus.pending; // 申請中
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _friendshipStatus = status;
+      });
+    }
+    return status;
+  }
+  // ▲▲▲
 
   Future<void> _toggleLike(String postId) async {
     final user = FirebaseAuth.instance.currentUser;
@@ -76,10 +127,10 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
     final isLiked = _likedPostIds.contains(postId);
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
-      final postSnapshot = await transaction.get(postRef); // Postデータを取得
+      final postSnapshot = await transaction.get(postRef);
       if (!postSnapshot.exists) return;
       final post = Post.fromFirestore(postSnapshot);
-      final shouldNotify = !isLiked && post.uid != user.uid; // 通知が必要か判断
+      final shouldNotify = !isLiked && post.uid != user.uid;
 
       if (isLiked) {
         transaction.delete(likeRef);
@@ -88,7 +139,6 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
         transaction.set(likeRef,
             {'uid': user.uid, 'createdAt': FieldValue.serverTimestamp()});
         transaction.update(postRef, {'likeCount': FieldValue.increment(1)});
-        // 通知を作成 (shouldNotifyがtrueの場合)
         if (shouldNotify) {
           final notificationRef =
               FirebaseFirestore.instance.collection('notifications').doc();
@@ -101,7 +151,7 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
             'postTextSnippet': post.text.length > 50
                 ? '${post.text.substring(0, 50)}...'
                 : post.text,
-            'targetUserId': post.uid, // 投稿主のID
+            'targetUserId': post.uid,
             'createdAt': FieldValue.serverTimestamp(),
             'isRead': false,
           });
@@ -117,36 +167,6 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
     });
   }
 
-  Future<void> _useAbility(Ability ability, Post post) async {
-    final targetUserRef =
-        FirebaseFirestore.instance.collection('users').doc(post.uid);
-
-    switch (ability.name) {
-      case '祝福の風':
-        if (post.isBlessed) return;
-        final postRef =
-            FirebaseFirestore.instance.collection('posts').doc(post.id);
-        await FirebaseFirestore.instance.runTransaction((transaction) async {
-          transaction.update(postRef, {'isBlessed': true});
-          transaction.set(targetUserRef, {'xp': FieldValue.increment(5)},
-              SetOptions(merge: true));
-        });
-        break;
-      // 他のアビリティの処理が必要な場合はここに追加
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${post.userName}に「${ability.name}」を送りました！'),
-        backgroundColor: Colors.green,
-      ),
-    );
-
-    setState(() {
-      _usedAbilitiesOnPosts[post.id] = ability.name;
-    });
-  }
-
   Future<void> _completeQuest() async {
     try {
       await FirebaseFirestore.instance
@@ -157,7 +177,6 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
         const SnackBar(
             content: Text('クエスト達成！おめでとうございます！'), backgroundColor: Colors.green),
       );
-      // setStateは不要（StreamBuilderが自動で更新するため）
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('エラーが発生しました: $e')),
@@ -208,177 +227,263 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
     }
   }
 
+  // ▼▼▼ クエスト経由のフレンド申請ロジック ▼▼▼
+  Future<void> _sendQuestFriendRequest() async {
+    if (_myId == null) return;
+
+    setState(() => _isLoadingStatus = true); // ボタンをローディング中に
+
+    try {
+      await FirebaseFirestore.instance.collection('friendships').add({
+        'senderId': _myId,
+        'receiverId': widget.quest.uid,
+        'status': 'quest_pending', // ◀◀◀ クエスト経由の申請
+        'createdAt': FieldValue.serverTimestamp(),
+        'userIds': [_myId, widget.quest.uid],
+      });
+
+      if (mounted) {
+        setState(() {
+          _friendshipStatus = FriendshipStatus.pending; // 申請中ステータスに変更
+          _isLoadingStatus = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('フレンド申請を送信しました。')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingStatus = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('申請に失敗しました: $e')),
+        );
+      }
+    }
+  }
+  // ▲▲▲
+
   @override
   Widget build(BuildContext context) {
+    // ▼▼▼ 自分のクエストかどうかを判定 ▼▼▼
+    final bool isMyQuest = widget.quest.uid == _myId;
+    final bool isFriendOrMyQuest =
+        isMyQuest || _friendshipStatus == FriendshipStatus.accepted;
+    // ▲▲▲
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.quest.title),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'クエストを削除',
-            onPressed: _deleteQuest,
-          )
+          // ▼▼▼ 自分のクエストの場合のみ削除ボタンを表示 ▼▼▼
+          if (isMyQuest)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'クエストを削除',
+              onPressed: _deleteQuest,
+            )
+          // ▲▲▲
         ],
       ),
-      body: CustomScrollView(
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.only(bottom: 80), // ボタンの高さを考慮
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                _QuestDetailHeader(quest: widget.quest), // ヘッダー
-                // ポストリストを表示するためのStreamBuilder
-                StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('posts')
-                      .where('myQuestId', isEqualTo: widget.quest.id)
-                      .orderBy('createdAt', descending: true) // 新しい順にソート
-                      .snapshots(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (snapshot.hasError) {
-                      // エラーハンドリングを追加
-                      return Center(
-                          child: Text('投稿の読み込みに失敗しました: ${snapshot.error}'));
-                    }
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Text('このクエストに関する投稿はまだありません。'),
-                        ),
-                      );
-                    }
+      body: _isLoadingStatus // 読み込み中は全体をローダーにする
+          ? const Center(child: CircularProgressIndicator())
+          : CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.only(bottom: 80),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      // ▼▼▼ ヘッダーに状態を渡す ▼▼▼
+                      _QuestDetailHeader(
+                        quest: widget.quest,
+                        isFriendOrMyQuest: isFriendOrMyQuest,
+                        friendshipStatus: _friendshipStatus,
+                        onSendRequest: _sendQuestFriendRequest,
+                      ),
+                      // ▲▲▲
+                      StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('posts')
+                            .where('myQuestId', isEqualTo: widget.quest.id)
+                            .orderBy('createdAt', descending: true)
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                                child: CircularProgressIndicator());
+                          }
+                          if (snapshot.hasError) {
+                            return Center(
+                                child:
+                                    Text('投稿の読み込みに失敗しました: ${snapshot.error}'));
+                          }
+                          if (!snapshot.hasData ||
+                              snapshot.data!.docs.isEmpty) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Text('このクエストに関する投稿はまだありません。'),
+                              ),
+                            );
+                          }
 
-                    final posts = snapshot.data!.docs
-                        .map((doc) => Post.fromFirestore(doc))
-                        .toList();
-                    // posts.sort((a, b) => b.createdAt.compareTo(a.createdAt)); // Firestore側でソートするので不要
+                          final posts = snapshot.data!.docs
+                              .map((doc) => Post.fromFirestore(doc))
+                              .toList();
 
-                    // Columnを使って複数の投稿カードを表示
-                    return Column(
-                      children: posts
-                              .map((post) => Card(
-                                    elevation: 2,
-                                    margin: const EdgeInsets.symmetric(
-                                        horizontal: 12.0, vertical: 8.0),
-                                    shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(16)),
-                                    clipBehavior: Clip.antiAlias,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        _PostHeader(post: post),
-                                        _PostContent(post: post),
-                                        if (_currentUserProfile != null)
-                                          _PostActions(
+                          return Column(
+                            children: posts
+                                .map((post) => Card(
+                                      elevation: 2,
+                                      margin: const EdgeInsets.symmetric(
+                                          horizontal: 12.0, vertical: 8.0),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(16)),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          // ▼▼▼ ポストヘッダーにも状態を渡す ▼▼▼
+                                          _PostHeader(
                                             post: post,
-                                            isLiked:
-                                                _likedPostIds.contains(post.id),
-                                            myAbilities: _myAbilities,
-                                            isMyPost: post.uid ==
-                                                _currentUserProfile?.uid,
-                                            usedAbilityName:
-                                                _usedAbilitiesOnPosts[post.id],
-                                            onLike: () => _toggleLike(post.id),
-                                            onUseAbility: (ability) =>
-                                                _useAbility(ability, post),
+                                            isFriendOrMyQuest:
+                                                isFriendOrMyQuest,
                                           ),
-                                      ],
-                                    ),
-                                  ))
-                              .toList() ?? // postsがnullの場合も考慮 (Firestore streamでは通常不要だが念のため)
-                          [],
-                    );
-                  },
-                ),
-              ]),
-            ),
-          ),
-        ],
-      ),
-
-      // ▼▼▼ FABを追加 ▼▼▼
-      floatingActionButton: StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('my_quests')
-              .doc(widget.quest.id)
-              .snapshots(),
-          builder: (context, questSnapshot) {
-            if (!questSnapshot.hasData) return const SizedBox.shrink();
-            final currentQuest = MyQuest.fromFirestore(questSnapshot.data!);
-            // 挑戦中の場合のみ記録ボタンを表示
-            if (currentQuest.status == 'active') {
-              return FloatingActionButton.extended(
-                onPressed: () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (context) => MyQuestPostScreen(
-                          initialQuest: widget.quest) // このクエストを渡す
-                      ));
-                },
-                icon: const Icon(Icons.add_task),
-                label: const Text('進捗を記録'),
-              );
-            } else {
-              return const SizedBox.shrink(); // 達成済みならボタン非表示
-            }
-          }),
-      // ▲▲▲ FABを追加 ▲▲▲
-
-      bottomNavigationBar: StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('my_quests')
-              .doc(widget.quest.id)
-              .snapshots(),
-          builder: (context, questSnapshot) {
-            if (!questSnapshot.hasData)
-              return const SizedBox.shrink(); // データがない場合は何も表示しない
-            final currentQuest = MyQuest.fromFirestore(questSnapshot.data!);
-
-            // 挑戦中の場合のみ達成ボタンを表示
-            if (currentQuest.status == 'active') {
-              return Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.check_circle),
-                  label: const Text('目標を達成済みにする'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 50),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                                          // ▲▲▲
+                                          _PostContent(post: post),
+                                          if (_currentUserProfile != null)
+                                            _PostActions(
+                                              post: post,
+                                              isLiked: _likedPostIds
+                                                  .contains(post.id),
+                                              onLike: () =>
+                                                  _toggleLike(post.id),
+                                            ),
+                                        ],
+                                      ),
+                                    ))
+                                .toList(),
+                          );
+                        },
+                      ),
+                    ]),
                   ),
-                  onPressed: _completeQuest,
                 ),
-              );
-            } else {
-              // 達成済みの場合はメッセージ表示
-              return Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Center(
-                      child: Chip(
-                    label: Text('🎉 この目標は達成済みです！',
-                        style: TextStyle(color: Colors.green[800])),
-                    backgroundColor: Colors.green[100],
-                    avatar: Icon(Icons.emoji_events, color: Colors.green[800]),
-                  )));
-            }
-          }),
+              ],
+            ),
+
+      // ▼▼▼ 自分のクエストの場合のみ FAB を表示 ▼▼▼
+      floatingActionButton: isMyQuest
+          ? StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('my_quests')
+                  .doc(widget.quest.id)
+                  .snapshots(),
+              builder: (context, questSnapshot) {
+                if (!questSnapshot.hasData) return const SizedBox.shrink();
+                final currentQuest = MyQuest.fromFirestore(questSnapshot.data!);
+
+                if (currentQuest.status == 'active') {
+                  return FloatingActionButton.extended(
+                    onPressed: () {
+                      Navigator.of(context).push(MaterialPageRoute(
+                          builder: (context) =>
+                              MyQuestPostScreen(initialQuest: widget.quest)));
+                    },
+                    icon: const Icon(Icons.add_task),
+                    label: const Text('進捗を記録'),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Colors.white,
+                  );
+                } else {
+                  return const SizedBox.shrink();
+                }
+              })
+          : null, // 自分のクエストでなければ null
+      // ▲▲▲
+
+      // ▼▼▼ 自分のクエストの場合のみボトムバーを表示 ▼▼▼
+      bottomNavigationBar: isMyQuest
+          ? StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('my_quests')
+                  .doc(widget.quest.id)
+                  .snapshots(),
+              builder: (context, questSnapshot) {
+                if (!questSnapshot.hasData) return const SizedBox.shrink();
+                final currentQuest = MyQuest.fromFirestore(questSnapshot.data!);
+
+                if (currentQuest.status == 'active') {
+                  return Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.check_circle),
+                      label: const Text('目標を達成済みにする'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 50),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: _completeQuest,
+                    ),
+                  );
+                } else {
+                  return Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Center(
+                          child: Chip(
+                        label: Text('🎉 この目標は達成済みです！',
+                            style: TextStyle(color: Colors.green[100])),
+                        backgroundColor: Colors.green[800]?.withOpacity(0.5),
+                        avatar:
+                            Icon(Icons.emoji_events, color: Colors.green[100]),
+                      )));
+                }
+              })
+          : null, // 自分のクエストでなければ null
+      // ▲▲▲
     );
   }
 }
 
-// --- 以下、変更なしのウィジェット ---
+// --- ヘッダーウィジェット ---
 
 class _QuestDetailHeader extends StatelessWidget {
   final MyQuest quest;
-  const _QuestDetailHeader({required this.quest});
+  // ▼▼▼ 引数を追加 ▼▼▼
+  final bool isFriendOrMyQuest;
+  final FriendshipStatus friendshipStatus;
+  final VoidCallback onSendRequest;
+  // ▲▲▲
+  const _QuestDetailHeader({
+    required this.quest,
+    required this.isFriendOrMyQuest,
+    required this.friendshipStatus,
+    required this.onSendRequest,
+  });
+
+  Color _getColorForCategory(String category, BuildContext context) {
+    switch (category) {
+      case 'Life':
+        return Colors.green.shade400;
+      case 'Study':
+        return Colors.blue.shade400;
+      case 'Physical':
+        return Colors.red.shade400;
+      case 'Social':
+        return Colors.pink.shade400;
+      case 'Creative':
+        return Colors.purple.shade400;
+      case 'Mental':
+        return Colors.indigo.shade400;
+      default:
+        return Theme.of(context).colorScheme.primary;
+    }
+  }
 
   IconData _getIconForCategory(String category) {
     switch (category) {
@@ -399,37 +504,17 @@ class _QuestDetailHeader extends StatelessWidget {
     }
   }
 
-  Color _getColorForCategory(String category, BuildContext context) {
-    switch (category) {
-      case 'Life':
-        return Colors.green;
-      case 'Study':
-        return Colors.blue;
-      case 'Physical':
-        return Colors.red;
-      case 'Social':
-        return Colors.pink;
-      case 'Creative':
-        return Colors.purple;
-      case 'Mental':
-        return Colors.indigo;
-      default:
-        return Theme.of(context).primaryColor;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final color = _getColorForCategory(quest.category, context);
     final icon = _getIconForCategory(quest.category);
+    final secondaryTextColor = Colors.grey[400]!;
 
     final startDate = DateTime.tryParse(quest.startDate) ?? DateTime.now();
     final endDate = DateTime.tryParse(quest.endDate) ?? DateTime.now();
     final totalDuration = endDate.difference(startDate).inDays;
-    final elapsedDuration = DateTime.now()
-        .difference(startDate)
-        .inDays
-        .clamp(0, totalDuration); // 経過日数が負または合計を超えないように
+    final elapsedDuration =
+        DateTime.now().difference(startDate).inDays.clamp(0, totalDuration);
     final progress = (totalDuration > 0)
         ? (elapsedDuration / totalDuration).clamp(0.0, 1.0)
         : 0.0;
@@ -447,14 +532,64 @@ class _QuestDetailHeader extends StatelessWidget {
               Expanded(
                 child: Text(
                   quest.title,
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.bold),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold, color: Colors.white),
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          // ▼▼▼ 投稿者情報とフレンド申請ボタン ▼▼▼
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundImage:
+                    (isFriendOrMyQuest && quest.userPhotoURL != null)
+                        ? NetworkImage(quest.userPhotoURL!)
+                        : null,
+                child: (!isFriendOrMyQuest || quest.userPhotoURL == null)
+                    ? const Icon(Icons.person, size: 16)
+                    : null,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isFriendOrMyQuest ? quest.userName : '匿名の冒険者',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: isFriendOrMyQuest
+                            ? Colors.white
+                            : secondaryTextColor,
+                        fontWeight: isFriendOrMyQuest
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                ),
+              ),
+              // フレンド申請ボタン
+              if (!isFriendOrMyQuest)
+                ElevatedButton.icon(
+                  icon: Icon(
+                      friendshipStatus == FriendshipStatus.none
+                          ? Icons.person_add_alt_1
+                          : Icons.check,
+                      size: 16),
+                  label: Text(
+                      friendshipStatus == FriendshipStatus.none ? '申請' : '申請中'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: friendshipStatus == FriendshipStatus.none
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey[700],
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  onPressed: friendshipStatus == FriendshipStatus.none
+                      ? onSendRequest // 申請中でなければ押せる
+                      : null, // 申請中なら押せない
+                ),
+            ],
+          ),
+          // ▲▲▲
           const SizedBox(height: 16),
           StreamBuilder<DocumentSnapshot>(
               stream: FirebaseFirestore.instance
@@ -462,8 +597,56 @@ class _QuestDetailHeader extends StatelessWidget {
                   .doc(quest.id)
                   .snapshots(),
               builder: (context, snapshot) {
-                if (!snapshot.hasData) return const SizedBox.shrink();
+                if (!snapshot.hasData) {
+                  if (quest.status == 'active') {
+                    return Column(
+                      children: [
+                        LinearProgressIndicator(
+                          value: progress,
+                          backgroundColor: color.withOpacity(0.2),
+                          valueColor: AlwaysStoppedAnimation<Color>(color),
+                          minHeight: 8,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(quest.startDate.replaceAll('-', '/'),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: secondaryTextColor)),
+                            Text(
+                                remainingDays >= 0
+                                    ? '残り $remainingDays 日'
+                                    : '期間終了',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(fontWeight: FontWeight.bold)),
+                            Text(quest.endDate.replaceAll('-', '/'),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: secondaryTextColor)),
+                          ],
+                        ),
+                      ],
+                    );
+                  } else {
+                    return Text(
+                      '期間: ${quest.startDate.replaceAll('-', '/')} 〜 ${quest.endDate.replaceAll('-', '/')}',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: secondaryTextColor),
+                    );
+                  }
+                }
+
                 final currentQuest = MyQuest.fromFirestore(snapshot.data!);
+
                 if (currentQuest.status == 'active') {
                   return Column(
                     children: [
@@ -479,17 +662,23 @@ class _QuestDetailHeader extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(quest.startDate.replaceAll('-', '/'),
-                              style: Theme.of(context).textTheme.bodySmall),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: secondaryTextColor)),
                           Text(
                               remainingDays >= 0
                                   ? '残り $remainingDays 日'
-                                  : '期間終了', // 終了日を過ぎていたら表示変更
+                                  : '期間終了',
                               style: Theme.of(context)
                                   .textTheme
                                   .bodySmall
                                   ?.copyWith(fontWeight: FontWeight.bold)),
                           Text(quest.endDate.replaceAll('-', '/'),
-                              style: Theme.of(context).textTheme.bodySmall),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: secondaryTextColor)),
                         ],
                       ),
                     ],
@@ -497,7 +686,10 @@ class _QuestDetailHeader extends StatelessWidget {
                 } else {
                   return Text(
                     '期間: ${quest.startDate.replaceAll('-', '/')} 〜 ${quest.endDate.replaceAll('-', '/')}',
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: secondaryTextColor),
                   );
                 }
               }),
@@ -506,7 +698,7 @@ class _QuestDetailHeader extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.grey.shade100,
+              color: Theme.of(context).cardColor,
               borderRadius: BorderRadius.circular(12),
               border: Border(left: BorderSide(color: color, width: 5)),
             ),
@@ -515,12 +707,16 @@ class _QuestDetailHeader extends StatelessWidget {
               children: [
                 Text('意気込み:',
                     style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey.shade700)),
+                      fontWeight: FontWeight.bold,
+                      color: secondaryTextColor,
+                    )),
                 const SizedBox(height: 4),
                 Text(quest.motivation,
                     style: const TextStyle(
-                        fontSize: 16, fontStyle: FontStyle.italic)),
+                      fontSize: 16,
+                      fontStyle: FontStyle.italic,
+                      color: Colors.white,
+                    )),
               ],
             ),
           ),
@@ -540,61 +736,76 @@ class _QuestDetailHeader extends StatelessWidget {
   }
 }
 
+// --- 投稿カードウィジェット ---
+
 class _PostHeader extends StatelessWidget {
   final Post post;
-  const _PostHeader({required this.post});
+  // ▼▼▼ 引数を追加 ▼▼▼
+  final bool isFriendOrMyQuest;
+  // ▲▲▲
+  const _PostHeader({required this.post, required this.isFriendOrMyQuest});
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-              builder: (context) => ProfileScreen(userId: post.uid)),
-        );
-      },
+      // ▼▼▼ フレンドか自分ならプロフィールに飛べる ▼▼▼
+      onTap: isFriendOrMyQuest
+          ? () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (context) => ProfileScreen(userId: post.uid)),
+              );
+            }
+          : null, // ▲▲▲
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         child: Row(
           children: [
             CircleAvatar(
               radius: 20,
-              backgroundImage: post.userAvatar != null
+              // ▼▼▼ 匿名化対応 ▼▼▼
+              backgroundImage: (isFriendOrMyQuest && post.userAvatar != null)
                   ? NetworkImage(post.userAvatar!)
                   : null,
-              child: post.userAvatar == null ? const Icon(Icons.person) : null,
+              child: (!isFriendOrMyQuest || post.userAvatar == null)
+                  ? const Icon(Icons.person)
+                  : null,
+              // ▲▲▲
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(post.userName,
+                  Text(
+                      // ▼▼▼ 匿名化対応 ▼▼▼
+                      isFriendOrMyQuest ? post.userName : '匿名の冒険者',
                       style: const TextStyle(
                           fontWeight: FontWeight.bold, fontSize: 16)),
+                  // レベルとジョブはフレンドでなくても表示する
                   Text('Lv.${post.userLevel}・${post.userClass}',
                       style: Theme.of(context).textTheme.bodySmall),
+                  // ▲▲▲
                 ],
               ),
             ),
-            if (post.isWisdomShared) // 叡智の共有アイコン表示
-              const Row(
+            if (post.isWisdomShared)
+              Row(
                 children: [
                   Icon(Icons.lightbulb,
-                      color: Colors.deepPurpleAccent, size: 18),
+                      color: Colors.deepPurpleAccent.shade100, size: 18),
                   SizedBox(width: 4),
                   Text("叡智",
                       style: TextStyle(
-                          color: Colors.deepPurpleAccent,
+                          color: Colors.deepPurpleAccent.shade100,
                           fontWeight: FontWeight.bold)),
                 ],
               )
-            // 時間表示を追加
             else if (post.timeSpentHours != null && post.timeSpentHours! > 0)
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.timer_outlined, size: 16, color: Colors.grey[600]),
+                  Icon(Icons.timer_outlined, size: 16, color: Colors.grey[500]),
                   const SizedBox(width: 4),
                   Text('${post.timeSpentHours}時間',
                       style: Theme.of(context).textTheme.bodySmall),
@@ -618,8 +829,6 @@ class _PostContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // myQuestTitleの表示は削除（詳細画面なので不要）
-          // if (post.myQuestTitle != null) ...
           if (post.text.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 8.0),
@@ -644,85 +853,45 @@ class _PostContent extends StatelessWidget {
 class _PostActions extends StatelessWidget {
   final Post post;
   final bool isLiked;
-  final bool isMyPost;
-  final List<Ability> myAbilities;
-  final String? usedAbilityName;
   final VoidCallback onLike;
-  final Function(Ability) onUseAbility;
 
   const _PostActions({
     required this.post,
     required this.isLiked,
-    required this.isMyPost,
-    required this.myAbilities,
-    this.usedAbilityName,
     required this.onLike,
-    required this.onUseAbility,
   });
 
   @override
   Widget build(BuildContext context) {
+    final Color iconColor = Colors.grey[500]!;
+    final Color accentColor = Theme.of(context).colorScheme.primary;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
       child: Row(
         children: [
           IconButton(
             icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border,
-                color: isLiked ? Colors.redAccent : Colors.grey[600]),
+                color: isLiked ? accentColor : iconColor),
             onPressed: onLike,
           ),
-          Text(post.likeCount.toString(),
-              style: TextStyle(color: Colors.grey[600])),
+          Text(post.likeCount.toString(), style: TextStyle(color: iconColor)),
           const SizedBox(width: 8),
           IconButton(
-            icon: Icon(Icons.chat_bubble_outline, color: Colors.grey[600]),
+            icon: Icon(Icons.chat_bubble_outline, color: iconColor),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (context) => CommentScreen(post: post))),
           ),
           Text(post.commentCount.toString(),
-              style: TextStyle(color: Colors.grey[600])),
-          // 自分の投稿でなく、かつ自分がアビリティを持っている場合のみボタン表示
-          if (!isMyPost && myAbilities.isNotEmpty) _buildAbilityButton(context),
+              style: TextStyle(color: iconColor)),
           const Spacer(),
           Text(
             DateFormat('M/d HH:mm').format(post.createdAt.toDate()),
-            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            style: TextStyle(color: iconColor, fontSize: 12),
           ),
           const SizedBox(width: 8),
         ],
       ),
-    );
-  }
-
-  Widget _buildAbilityButton(BuildContext context) {
-    // 使えるアビリティが複数ある場合、選択式にする必要があるが、
-    // 現状は各クラス1つなので、最初のものを表示する
-    if (myAbilities.isEmpty) return const SizedBox.shrink();
-
-    final ability = myAbilities.first;
-    final bool isUsed = usedAbilityName == ability.name;
-    // アビリティ使用不可条件
-    bool isDisabledByState =
-        isUsed || (ability.name == '祝福の風' && post.isBlessed);
-
-    IconData icon = ability.icon;
-    Color? color;
-
-    // 祝福済みの場合の表示調整
-    if (ability.name == '祝福の風' && post.isBlessed) {
-      icon = Icons.star; // 祝福済みアイコン
-      color = Colors.amber; // 祝福済み色
-      isDisabledByState = true; // 祝福済みなら押せない
-    }
-
-    return IconButton(
-      icon: Icon(icon,
-          color: isDisabledByState
-              ? color ?? Colors.grey // 無効状態の色
-              : Theme.of(context).colorScheme.primary), // 有効状態の色
-      tooltip: ability.name,
-      onPressed:
-          isDisabledByState ? null : () => onUseAbility(ability), // 無効なら押せない
     );
   }
 }

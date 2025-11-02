@@ -1,9 +1,12 @@
+// lib/auth_gate.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'login_screen.dart';
 import 'main.dart';
-import 'avatar_creation_screen.dart'; // アバター作成画面をインポート
+// import 'avatar_creation_screen.dart'; // ◀◀◀ 削除
+import 'account_name_screen.dart';
+import 'initial_profile_setup_screen.dart'; // ◀◀◀ 新しい画面をインポート
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
@@ -12,39 +15,47 @@ class AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        // ユーザーがログインしていない場合
-        if (!snapshot.hasData) {
+      builder: (context, authSnapshot) {
+        if (!authSnapshot.hasData) {
           return const LoginScreen();
         }
 
-        // ユーザーがログインしている場合
-        final user = snapshot.data!;
+        final user = authSnapshot.data!;
 
-        // ユーザーのアバター情報があるかFirestoreをチェックする
-        return FutureBuilder<DocumentSnapshot>(
-          future: FirebaseFirestore.instance
+        return StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
               .collection('users')
               .doc(user.uid)
-              .get(),
+              .snapshots(),
           builder: (context, userDocSnapshot) {
-            // データ読み込み中
             if (userDocSnapshot.connectionState == ConnectionState.waiting) {
               return const Scaffold(
                 body: Center(child: CircularProgressIndicator()),
               );
             }
 
-            // ユーザーデータが存在し、'avatar'フィールドも存在する場合
-            if (userDocSnapshot.hasData &&
-                userDocSnapshot.data!.exists &&
-                (userDocSnapshot.data!.data() as Map).containsKey('avatar')) {
-              // ホーム画面へ
-              return const HomeScreen();
-            } else {
-              // アバターが未作成ならアバター作成画面へ
-              return const AvatarCreationScreen();
+            // 1. ドキュメント自体が存在しない場合
+            if (!userDocSnapshot.hasData || !userDocSnapshot.data!.exists) {
+              return const AccountNameScreen();
             }
+
+            final data = userDocSnapshot.data!.data() as Map<String, dynamic>;
+
+            // 2. accountName がない場合
+            if (!data.containsKey('accountName') ||
+                data['accountName'] == null) {
+              return const AccountNameScreen();
+            }
+
+            // ▼▼▼ 'avatar' のチェックを 'bio' のチェックに変更 ▼▼▼
+            // 2b. bio (自己紹介) がない場合
+            if (!data.containsKey('bio') || data['bio'] == null) {
+              return const InitialProfileSetupScreen(); // ◀◀◀ 遷移先を変更
+            }
+            // ▲▲▲
+
+            // 3. すべて揃っている場合
+            return const HomeScreen();
           },
         );
       },

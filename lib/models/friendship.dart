@@ -1,19 +1,21 @@
+// lib/models/friendship.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// ▼▼▼ このenum定義を追加 ▼▼▼
+// ▼▼▼ このenum定義を修正 ▼▼▼
 enum FriendshipStatus {
-  pending, // 申請中
+  pending, // 通常の申請中
+  quest_pending, // 探す欄からの申請中 ◀◀◀ 追加
   accepted, // 承認済み
   declined, // 拒否
   none, // 関係なし
 }
-// ▲▲▲ このenum定義を追加 ▲▲▲
+// ▲▲▲
 
 class Friendship {
   final String id;
   final String senderId;
   final String receiverId;
-  final String status; // "pending", "accepted", "declined"
+  final String status; // "pending", "quest_pending", "accepted", "declined"
   final Timestamp createdAt;
 
   Friendship({

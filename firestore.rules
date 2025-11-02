@@ -4,7 +4,6 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // --- NEW RULE FOR COLLECTION GROUP ---
-    // 「いいね」の一覧取得を許可する
     match /{path=**}/likes/{userId} {
       allow read: if request.auth != null;
     }
@@ -18,7 +17,23 @@ service cloud.firestore {
     // 【Users】
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      // ▼▼▼ update ルールを修正 ▼▼▼
+      allow update: if request.auth != null && request.auth.uid == userId
+                    // accountName が変更されていない (既に設定済みの場合)
+                    && (request.resource.data.accountName == resource.data.accountName
+                    // または
+                    // accountName がまだ存在しない (null から設定する場合)
+                    || !(resource.data.keys().hasAny(['accountName'])));
+      // ▲▲▲
+    }
+    
+    // 【AccountNames】 (重複チェック用)
+    match /accountNames/{name} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null 
+                    && request.auth.uid == request.resource.data.uid;
+      allow update, delete: if false;
     }
 
     // 【MyQuests】
@@ -32,12 +47,9 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.uid;
-      
-      // --- MODIFIED RULE ---
-      // 投稿の更新を、ログインしているユーザーなら誰でも許可する（「いいね」のため）
       allow update: if request.auth != null;
       allow delete: if request.auth != null && request.auth.uid == resource.data.uid;
-
+      
       // 【Likes】
       match /likes/{userId} {
         allow read: if request.auth != null;
@@ -55,14 +67,12 @@ service cloud.firestore {
     // 【Friendships】
     match /friendships/{friendshipId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null
-                    && request.auth.uid == request.resource.data.requesterId
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.senderId
                     && request.resource.data.status == "pending";
-      allow update: if request.auth != null
-                    && request.auth.uid == resource.data.recipientId
+      allow update: if request.auth != null && request.auth.uid == resource.data.receiverId
                     && resource.data.status == "pending"
                     && (request.resource.data.status == "accepted" || request.resource.data.status == "declined");
-      allow delete: if request.auth != null && request.auth.uid in resource.data.userIds;
+      allow delete: if request.auth != null && (request.auth.uid == resource.data.senderId || request.auth.uid == resource.data.receiverId);
     }
   }
 }

@@ -63,13 +63,15 @@ class UserProfile {
   final String uid;
   final String? displayName;
   final String? photoURL;
+  // ▼▼▼ 2つのフィールドを追加 ▼▼▼
+  final String? accountName;
+  final String? bio;
+  // ▲▲▲
   final int xp;
   final UserStats stats;
   final Avatar? avatar;
   final Map<String, String> equippedItems;
-  // ▼▼▼ フィールド名と型を変更 ▼▼▼
   final double totalEffortHours;
-  // ▲▲▲ フィールド名と型を変更 ▲▲▲
   final int currentStreak;
   final int longestStreak;
   final Timestamp? lastPostDate;
@@ -79,13 +81,15 @@ class UserProfile {
     required this.uid,
     this.displayName,
     this.photoURL,
+    // ▼▼▼ コンストラクタに追加 ▼▼▼
+    this.accountName,
+    this.bio,
+    // ▲▲▲
     required this.xp,
     required this.stats,
     this.avatar,
     required this.equippedItems,
-    // ▼▼▼ コンストラクタを修正 ▼▼▼
     required this.totalEffortHours,
-    // ▲▲▲ コンストラクタを修正 ▲▲▲
     required this.currentStreak,
     required this.longestStreak,
     this.lastPostDate,
@@ -94,7 +98,6 @@ class UserProfile {
 
   factory UserProfile.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-    // ▼▼▼ totalEffortHours の読み込みを追加 (int から double へのキャストも考慮) ▼▼▼
     double hours = 0.0;
     if (data['totalEffortHours'] != null) {
       if (data['totalEffortHours'] is int) {
@@ -103,20 +106,21 @@ class UserProfile {
         hours = data['totalEffortHours'] as double;
       }
     }
-    // ▲▲▲ totalEffortHours の読み込みを追加 ▲▲▲
 
     return UserProfile(
       uid: doc.id,
       displayName: data['displayName'],
       photoURL: data['photoURL'],
+      // ▼▼▼ Firestore から読み込む ▼▼▼
+      accountName: data['accountName'],
+      bio: data['bio'],
+      // ▲▲▲
       xp: data['xp'] ?? 0,
       stats: UserStats.fromMap(data['stats'] ?? {}),
       avatar:
           data.containsKey('avatar') ? Avatar.fromMap(data['avatar']) : null,
       equippedItems: Map<String, String>.from(data['equippedItems'] ?? {}),
-      // ▼▼▼ 修正した hours 変数を使用 (デフォルト 0.0) ▼▼▼
       totalEffortHours: hours,
-      // ▲▲▲ 修正した hours 変数を使用 ▲▲▲
       currentStreak: data['currentStreak'] ?? 0,
       longestStreak: data['longestStreak'] ?? 0,
       lastPostDate: data['lastPostDate'],

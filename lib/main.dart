@@ -1,18 +1,14 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart'; // スペースを追加
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart'; // スペースを追加
+import 'package:google_fonts/google_fonts.dart'; // Google Fonts
 import 'auth_gate.dart';
 import 'firebase_options.dart';
-import 'friends_screen.dart'; // スペースを追加
-import 'models/quest.dart';
+import 'friends_screen.dart';
 import 'my_quests_screen.dart';
-import 'post_screen.dart'; // PostScreenをインポート
 import 'profile_screen.dart';
 import 'timeline_screen.dart';
-import 'utils/quest_service.dart';
-// growth_path_screen.dart は main.dart では不要
+import 'explore_quests_screen.dart'; // 「探す」タブ
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,34 +23,76 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color primaryBlue = const Color(0xFF0EA5E9);
-    final textTheme = GoogleFonts.interTextTheme(Theme.of(context).textTheme);
+    // 1. 色の定義
+    final Color primaryAccent = Colors.deepOrange; // 炎のようなアクセント色
+    final Color backgroundColor = Colors.black; // ベース背景
+    final Color surfaceColor = Colors.grey[900]!; // カードやAppBarの背景色
+    final Color primaryTextColor = Colors.white; // 通常の文字色
+    final Color secondaryTextColor = Colors.grey[400]!; // やや暗い文字色
 
+    // 2. テキストテーマの定義
+    final baseTheme = ThemeData(brightness: Brightness.dark);
+    // 全体の基本フォントは 'Inter' を維持
+    final textTheme = GoogleFonts.interTextTheme(baseTheme.textTheme).apply(
+      bodyColor: primaryTextColor,
+      displayColor: primaryTextColor,
+    );
+
+    // 3. MaterialAppに新しいテーマを適用
     return MaterialApp(
       title: 'MiniQuest',
       theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: backgroundColor,
+
+        // 基本のカラー設定
         colorScheme: ColorScheme.fromSeed(
-            seedColor: primaryBlue, background: const Color(0xFFF8FAFC)),
-        textTheme: textTheme,
-        appBarTheme: AppBarTheme(
-          backgroundColor:
-              const Color(0xFFFFFFFF).withOpacity(0.8), // デフォルトのAppBar背景色
-          foregroundColor: const Color(0xFF0f172a),
-          elevation: 0,
-          titleTextStyle: textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: primaryBlue, // AppBarタイトルはこの色に統一
-          ),
+          seedColor: primaryAccent,
+          brightness: Brightness.dark,
+          background: backgroundColor,
+          surface: surfaceColor, // カード、ダイアログ
+          onBackground: primaryTextColor, // 黒背景上のテキスト
+          onSurface: primaryTextColor, // カード上のテキスト
+          primary: primaryAccent, // ボタン、アクティブ要素
+          onPrimary: Colors.white, // ボタン上のテキスト
+          secondary: Colors.redAccent, // サブのアクセント
         ),
-        cardTheme: CardThemeData(
+
+        // テキストテーマ
+        textTheme: textTheme,
+
+        // AppBarのテーマ
+        appBarTheme: AppBarTheme(
+          backgroundColor: surfaceColor.withOpacity(0.85), // AppBarの背景
+          foregroundColor: primaryTextColor, // 戻る矢印など
           elevation: 0,
+          // ▼▼▼ フォントサイズを 1.5倍 (displaySmall) に変更 ▼▼▼
+          titleTextStyle: GoogleFonts.orbitron(
+            textStyle: textTheme.displaySmall?.copyWith(
+              // ◀◀◀ サイズ基準を変更
+              fontWeight: FontWeight.bold,
+              color: primaryAccent,
+            ),
+          ),
+          // ▲▲▲
+        ),
+
+        // カードのテーマ
+        cardTheme: CardThemeData(
+          color: surfaceColor, // カード背景
+          elevation: 2,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12.0),
-            side: const BorderSide(color: Color(0xFFE2E8F0)),
+            side: BorderSide(color: Colors.grey[800]!), // カードの枠線
           ),
         ),
+
+        // 下部ナビゲーションバーのテーマ
         bottomNavigationBarTheme: BottomNavigationBarThemeData(
-          selectedItemColor: primaryBlue,
+          backgroundColor: surfaceColor, // ナビゲーションバーの背景
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: primaryAccent, // 選択中のアイコンを炎色に
+          unselectedItemColor: secondaryTextColor, // 非選択のアイコン
           selectedLabelStyle: TextStyle(fontSize: 12.0),
           unselectedLabelStyle: TextStyle(fontSize: 12.0),
         ),
@@ -82,9 +120,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId != null) {
       _widgetOptions = <Widget>[
-        const QuestListScreen(),
+        const MyQuestsScreen(), // 1番目 (Index 0)
         const TimelineScreen(),
-        const MyQuestsScreen(),
+        const ExploreQuestsScreen(), // 3番目 (Index 2)
         const FriendsScreen(),
         ProfileScreen(userId: currentUserId),
       ];
@@ -107,169 +145,14 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'ホーム'),
-          BottomNavigationBarItem(icon: Icon(Icons.timeline), label: 'タイムライン'),
           BottomNavigationBarItem(icon: Icon(Icons.flag), label: 'マイクエスト'),
+          BottomNavigationBarItem(icon: Icon(Icons.timeline), label: 'タイムライン'),
+          BottomNavigationBarItem(icon: Icon(Icons.explore), label: '探す'),
           BottomNavigationBarItem(icon: Icon(Icons.people), label: 'フレンド'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'プロフィール'),
         ],
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
-      ),
-    );
-  }
-}
-
-class QuestListScreen extends StatefulWidget {
-  const QuestListScreen({super.key});
-  @override
-  State<QuestListScreen> createState() => _QuestListScreenState();
-}
-
-class _QuestListScreenState extends State<QuestListScreen> {
-  late Future<List<Quest>> _dailyQuestsFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _dailyQuestsFuture = QuestService.getDailyQuests();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text('MiniQuest'),
-        backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.8),
-      ),
-      body: FutureBuilder<List<Quest>>(
-        future: _dailyQuestsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return const Center(child: Text('クエストの取得に失敗しました'));
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('今日のクエストはありません'));
-          }
-          final quests = snapshot.data!;
-
-          return Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16.0),
-                width: double.infinity,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '今日のクエスト',
-                      style: Theme.of(context)
-                          .textTheme
-                          .headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '「日常を冒険に」毎日更新される三つのクエストに挑戦し、写真を撮ってみんなと共有しよう！',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12.0, vertical: 8.0),
-                  itemCount: quests.length,
-                  itemBuilder: (context, index) {
-                    final quest = quests[index];
-                    return _QuestCard(quest: quest);
-                  },
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _QuestCard extends StatelessWidget {
-  final Quest quest;
-  const _QuestCard({required this.quest});
-
-  static const Map<String, dynamic> _categoryDesigns = {
-    'Life': {'icon': Icons.home_outlined, 'color': Colors.green},
-    'Study': {'icon': Icons.school_outlined, 'color': Colors.blue},
-    'Physical': {'icon': Icons.fitness_center_outlined, 'color': Colors.red},
-    'Social': {'icon': Icons.people_outline, 'color': Colors.pink},
-    'Creative': {'icon': Icons.palette_outlined, 'color': Colors.purple},
-    'Mental': {'icon': Icons.self_improvement_outlined, 'color': Colors.indigo},
-    'Default': {'icon': Icons.flag_outlined, 'color': Colors.grey},
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final design =
-        _categoryDesigns[quest.category] ?? _categoryDesigns['Default']!;
-    final color = design['color'] as Color;
-    final icon = design['icon'] as IconData;
-
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 8.0),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(MaterialPageRoute(
-              builder: (context) => PostScreen(dailyQuest: quest)));
-        },
-        child: Container(
-          decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: color, width: 4)),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [color.withOpacity(0.05), Colors.white],
-              )),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Chip(
-                  avatar: Icon(icon, color: color, size: 18),
-                  label: Text(quest.tag),
-                  backgroundColor: color.withOpacity(0.15),
-                  side: BorderSide.none,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  quest.title,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  quest.description,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(color: Colors.grey[700]),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

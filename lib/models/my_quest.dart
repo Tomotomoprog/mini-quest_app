@@ -6,7 +6,6 @@ class MyQuest {
   final String id;
   final String uid;
   final String title;
-  // ▼▼▼ description を追加 ▼▼▼
   final String description; // 詳細画面で使うため追加
   final String motivation;
   final String category;
@@ -14,15 +13,16 @@ class MyQuest {
   final String startDate;
   final String endDate;
   final Timestamp createdAt;
-  // ▼▼▼ completedAt を追加 ▼▼▼
   final Timestamp? completedAt; // 達成日時
-  // ▲▲▲ completedAt を追加 ▲▲▲
+  // ▼▼▼ 以下の2フィールドを追加 ▼▼▼
+  final String userName;
+  final String? userPhotoURL;
+  // ▲▲▲ 以下の2フィールドを追加 ▲▲▲
 
   MyQuest({
     required this.id,
     required this.uid,
     required this.title,
-    // ▼▼▼ description を追加 ▼▼▼
     required this.description,
     required this.motivation,
     required this.category,
@@ -30,9 +30,11 @@ class MyQuest {
     required this.startDate,
     required this.endDate,
     required this.createdAt,
-    // ▼▼▼ completedAt を追加 ▼▼▼
     this.completedAt,
-    // ▲▲▲ completedAt を追加 ▲▲▲
+    // ▼▼▼ コンストラクタを修正 ▼▼▼
+    required this.userName,
+    this.userPhotoURL,
+    // ▲▲▲ コンストラクタを修正 ▲▲▲
   });
 
   factory MyQuest.fromFirestore(DocumentSnapshot doc) {
@@ -41,7 +43,6 @@ class MyQuest {
       id: doc.id,
       uid: data['uid'] ?? '',
       title: data['title'] ?? '',
-      // ▼▼▼ description を追加 ▼▼▼
       description: data['description'] ?? '', // description を読み込む
       motivation: data['motivation'] ?? '',
       category: data['category'] ?? 'Life',
@@ -49,13 +50,14 @@ class MyQuest {
       startDate: data['startDate'] ?? '',
       endDate: data['endDate'] ?? '',
       createdAt: data['createdAt'] ?? Timestamp.now(),
-      // ▼▼▼ completedAt を追加 ▼▼▼
       completedAt: data['completedAt'], // completedAt を読み込む
-      // ▲▲▲ completedAt を追加 ▲▲▲
+      // ▼▼▼ 読み込み処理を追加 ▼▼▼
+      userName: data['userName'] ?? '名無しさん',
+      userPhotoURL: data['userPhotoURL'],
+      // ▲▲▲ 読み込み処理を追加 ▲▲▲
     );
   }
 
-  // ▼▼▼ copyWith メソッドを追加 ▼▼▼
   MyQuest copyWith({
     String? id,
     String? uid,
@@ -68,6 +70,10 @@ class MyQuest {
     String? endDate,
     Timestamp? createdAt,
     Timestamp? completedAt,
+    // ▼▼▼ copyWith を修正 ▼▼▼
+    String? userName,
+    String? userPhotoURL,
+    // ▲▲▲ copyWith を修正 ▲▲▲
   }) {
     return MyQuest(
       id: id ?? this.id,
@@ -81,7 +87,10 @@ class MyQuest {
       endDate: endDate ?? this.endDate,
       createdAt: createdAt ?? this.createdAt,
       completedAt: completedAt ?? this.completedAt,
+      // ▼▼▼ copyWith を修正 ▼▼▼
+      userName: userName ?? this.userName,
+      userPhotoURL: userPhotoURL ?? this.userPhotoURL,
+      // ▲▲▲ copyWith を修正 ▲▲▲
     );
   }
-  // ▲▲▲ copyWith メソッドを追加 ▲▲▲
 }

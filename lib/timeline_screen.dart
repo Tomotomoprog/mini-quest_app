@@ -6,9 +6,7 @@ import 'models/post.dart';
 import 'comment_screen.dart';
 import 'profile_screen.dart';
 import 'models/user_profile.dart';
-import 'utils/ability_service.dart';
 import 'utils/progression.dart';
-import 'models/ability.dart';
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -20,9 +18,9 @@ class TimelineScreen extends StatefulWidget {
 class _TimelineScreenState extends State<TimelineScreen> {
   Set<String> _likedPostIds = {};
   UserProfile? _currentUserProfile;
-  JobResult? _myJobInfo;
-  List<Ability> _myAbilities = [];
-  final Map<String, String> _usedAbilitiesOnPosts = {};
+
+  List<String> _friendIds = [];
+  bool _isLoadingFriends = true;
 
   @override
   void initState() {
@@ -32,35 +30,59 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   Future<void> _fetchMyData() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      setState(() => _isLoadingFriends = false);
+      return;
+    }
 
     final userDocFuture =
         FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+
     final likesFuture = FirebaseFirestore.instance
         .collectionGroup('likes')
         .where('uid', isEqualTo: user.uid)
         .get();
 
-    final responses = await Future.wait([userDocFuture, likesFuture]);
+    final friendsFuture = FirebaseFirestore.instance
+        .collection('friendships')
+        .where('userIds', arrayContains: user.uid)
+        .where('status', isEqualTo: 'accepted')
+        .get();
+
+    final responses =
+        await Future.wait([userDocFuture, likesFuture, friendsFuture]);
 
     final userDoc = responses[0] as DocumentSnapshot;
     final likesSnapshot = responses[1] as QuerySnapshot;
+    final friendsSnapshot = responses[2] as QuerySnapshot;
 
     if (mounted) {
       if (userDoc.exists) {
         final profile = UserProfile.fromFirestore(userDoc);
-        final level = computeLevel(profile.xp);
-        final jobInfo = computeJob(profile.stats, level);
         setState(() {
           _currentUserProfile = profile;
-          _myJobInfo = jobInfo;
-          _myAbilities = AbilityService.getAbilitiesForClass(jobInfo.title);
         });
       }
+
       setState(() {
         _likedPostIds = likesSnapshot.docs
             .map((doc) => doc.reference.parent.parent!.id)
             .toSet();
+      });
+
+      final friendIds = friendsSnapshot.docs
+          .map((doc) {
+            final data = doc.data() as Map<String, dynamic>; // data() をキャスト
+            final userIds = data['userIds'] as List;
+            return userIds.firstWhere((id) => id != user.uid,
+                orElse: () => null);
+          })
+          .where((id) => id != null)
+          .toList();
+
+      setState(() {
+        _friendIds = friendIds.cast<String>();
+        _isLoadingFriends = false;
       });
     }
   }
@@ -116,68 +138,72 @@ class _TimelineScreenState extends State<TimelineScreen> {
     });
   }
 
-  Future<void> _useAbility(Ability ability, Post post) async {
-    final targetUserRef =
-        FirebaseFirestore.instance.collection('users').doc(post.uid);
-
-    switch (ability.name) {
-      case '祝福の風':
-        if (post.isBlessed) return;
-        final postRef =
-            FirebaseFirestore.instance.collection('posts').doc(post.id);
-        await FirebaseFirestore.instance.runTransaction((transaction) async {
-          transaction.update(postRef, {'isBlessed': true});
-          transaction.set(targetUserRef, {'xp': FieldValue.increment(5)},
-              SetOptions(merge: true));
-        });
-        break;
-      // 他のアビリティのロジックは省略
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${post.userName}に「${ability.name}」を送りました！'),
-        backgroundColor: Colors.green,
-      ),
-    );
-
-    setState(() {
-      _usedAbilitiesOnPosts[post.id] = ability.name;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
+    if (_isLoadingFriends ||
+        _currentUserProfile == null ||
+        currentUserId == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('MiniQuest'),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // ▼▼▼ 自分のIDとフレンドIDをSet(集合)にする ▼▼▼
+    // Set を使うことで .contains() のチェックが高速になります
+    final Set<String> feedUserIdsSet = {currentUserId, ..._friendIds};
+    // ▲▲▲
+
     return Scaffold(
       appBar: AppBar(
-        // ▼▼▼ タイトルを追加、toolbarHeightを削除 ▼▼▼
         title: const Text('MiniQuest'),
-        // toolbarHeight: 0, // この行を削除
-        // ▲▲▲ タイトルを追加、toolbarHeightを削除 ▲▲▲
       ),
       body: StreamBuilder<QuerySnapshot>(
+        // ▼▼▼ クエリを単純な「最新順」のみに変更 ▼▼▼
         stream: FirebaseFirestore.instance
             .collection('posts')
             .orderBy('createdAt', descending: true)
+            .limit(100) // 投稿が多すぎるとアプリが重くなるため、最新100件に制限
             .snapshots(),
+        // ▲▲▲
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting ||
-              _currentUserProfile == null) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            print("タイムライン エラー: ${snapshot.error}");
+            return const Center(child: Text('投稿の取得に失敗しました'));
           }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return const Center(child: Text('まだ投稿がありません。'));
           }
 
-          final posts = snapshot.data!.docs
+          // ▼▼▼ 取得した全投稿を、クライアント側でフィルタリング ▼▼▼
+          final allPosts = snapshot.data!.docs
               .map((doc) => Post.fromFirestore(doc))
               .toList();
 
+          final posts = allPosts.where((post) {
+            // 投稿のUIDが、自分またはフレンドのIDセットに含まれているか
+            return feedUserIdsSet.contains(post.uid);
+          }).toList();
+          // ▲▲▲
+
+          // ▼▼▼ フィルタリング後の投稿が0件の場合の表示 ▼▼▼
+          if (posts.isEmpty) {
+            return const Center(child: Text('フレンドの投稿はまだありません。'));
+          }
+          // ▲▲▲
+
           return ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-            itemCount: posts.length,
+            itemCount: posts.length, // フィルタリング後のリストを使用
             itemBuilder: (context, index) {
-              final post = posts[index];
+              final post = posts[index]; // フィルタリング後のリストを使用
               return Card(
                 elevation: 2,
                 margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -192,11 +218,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
                     _PostActions(
                       post: post,
                       isLiked: _likedPostIds.contains(post.id),
-                      myAbilities: _myAbilities,
                       isMyPost: post.uid == _currentUserProfile?.uid,
-                      usedAbilityName: _usedAbilitiesOnPosts[post.id],
                       onLike: () => _toggleLike(post.id),
-                      onUseAbility: (ability) => _useAbility(ability, post),
                     ),
                   ],
                 ),
@@ -209,7 +232,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
   }
 }
 
-// (以降の _PostHeader, _PostContent, _PostActions ウィジェットは変更なし)
+// (これ以下の _PostHeader, _PostContent, _PostActions ウィジェットは変更ありません)
 class _PostHeader extends StatelessWidget {
   final Post post;
   const _PostHeader({required this.post});
@@ -248,14 +271,14 @@ class _PostHeader extends StatelessWidget {
               ),
             ),
             if (post.isWisdomShared)
-              const Row(
+              Row(
                 children: [
                   Icon(Icons.lightbulb,
-                      color: Colors.deepPurpleAccent, size: 18),
-                  SizedBox(width: 4),
+                      color: Colors.deepPurpleAccent.shade100, size: 18),
+                  const SizedBox(width: 4),
                   Text("叡智",
                       style: TextStyle(
-                          color: Colors.deepPurpleAccent,
+                          color: Colors.deepPurpleAccent.shade100,
                           fontWeight: FontWeight.bold)),
                 ],
               )
@@ -282,13 +305,13 @@ class _PostContent extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               margin: const EdgeInsets.only(bottom: 8),
               decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
+                  color: Colors.blue.shade900.withOpacity(0.5),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.blue.shade200)),
+                  border: Border.all(color: Colors.blue.shade700)),
               child: Text('🚀 ${post.myQuestTitle}',
                   style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade800,
+                      color: Colors.blue.shade100,
                       fontSize: 12)),
             ),
           if (post.text.isNotEmpty)
@@ -316,75 +339,46 @@ class _PostActions extends StatelessWidget {
   final Post post;
   final bool isLiked;
   final bool isMyPost;
-  final List<Ability> myAbilities;
-  final String? usedAbilityName;
   final VoidCallback onLike;
-  final Function(Ability) onUseAbility;
 
   const _PostActions({
     required this.post,
     required this.isLiked,
     required this.isMyPost,
-    required this.myAbilities,
-    this.usedAbilityName,
     required this.onLike,
-    required this.onUseAbility,
   });
 
   @override
   Widget build(BuildContext context) {
+    final Color iconColor = Colors.grey[500]!;
+    final Color accentColor = Theme.of(context).colorScheme.primary;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
       child: Row(
         children: [
           IconButton(
             icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border,
-                color: isLiked ? Colors.redAccent : Colors.grey[600]),
+                color: isLiked ? accentColor : iconColor),
             onPressed: onLike,
           ),
-          Text(post.likeCount.toString(),
-              style: TextStyle(color: Colors.grey[600])),
+          Text(post.likeCount.toString(), style: TextStyle(color: iconColor)),
           const SizedBox(width: 8),
           IconButton(
-            icon: Icon(Icons.chat_bubble_outline, color: Colors.grey[600]),
+            icon: Icon(Icons.chat_bubble_outline, color: iconColor),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (context) => CommentScreen(post: post))),
           ),
           Text(post.commentCount.toString(),
-              style: TextStyle(color: Colors.grey[600])),
-          if (!isMyPost && myAbilities.isNotEmpty) _buildAbilityButton(context),
+              style: TextStyle(color: iconColor)),
           const Spacer(),
           Text(
             DateFormat('M/d HH:mm').format(post.createdAt.toDate()),
-            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            style: TextStyle(color: iconColor, fontSize: 12),
           ),
           const SizedBox(width: 8),
         ],
       ),
-    );
-  }
-
-  Widget _buildAbilityButton(BuildContext context) {
-    final ability = myAbilities.first;
-    final bool isUsed = usedAbilityName == ability.name;
-    bool isDisabledByState =
-        isUsed || (ability.name == '祝福の風' && post.isBlessed);
-
-    IconData icon = ability.icon;
-    Color? color;
-
-    if (ability.name == '祝福の風' && post.isBlessed) {
-      icon = Icons.star;
-      color = Colors.amber;
-    }
-
-    return IconButton(
-      icon: Icon(icon,
-          color: isDisabledByState
-              ? color ?? Colors.grey
-              : Theme.of(context).colorScheme.primary),
-      tooltip: ability.name,
-      onPressed: isDisabledByState ? null : () => onUseAbility(ability),
     );
   }
 }

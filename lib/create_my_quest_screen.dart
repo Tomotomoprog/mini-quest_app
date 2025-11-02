@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; // 日付フォーマットのために追加
+import 'models/user_profile.dart' as model; // ◀◀◀ ユーザーモデルをインポート
 
 class CreateMyQuestScreen extends StatefulWidget {
   const CreateMyQuestScreen({super.key});
@@ -30,10 +31,56 @@ class _CreateMyQuestScreenState extends State<CreateMyQuestScreen> {
   DateTime? _endDate;
   bool _isLoading = false;
 
+  // ▼▼▼ 以下の2行を追加 ▼▼▼
+  model.UserProfile? _currentUserProfile;
+  bool _isUserDataLoading = true;
+  // ▲▲▲
+
+  // ▼▼▼ initState と _fetchUserData を追加 ▼▼▼
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserData();
+  }
+
+  Future<void> _fetchUserData() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() => _isUserDataLoading = false);
+      return;
+    }
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      if (userDoc.exists && mounted) {
+        setState(() {
+          _currentUserProfile = model.UserProfile.fromFirestore(userDoc);
+          _isUserDataLoading = false;
+        });
+      } else {
+        setState(() => _isUserDataLoading = false);
+      }
+    } catch (e) {
+      print("User data fetch error: $e");
+      if (mounted) {
+        setState(() => _isUserDataLoading = false);
+      }
+    }
+  }
+  // ▲▲▲
+
   // Firestoreにマイクエストを保存する処理
   Future<void> _createMyQuest() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    // ▼▼▼ プロフィール情報のチェックを追加 ▼▼▼
+    if (user == null || _currentUserProfile == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('ユーザー情報の読み込みに失敗しました。')));
+      return;
+    }
+    // ▲▲▲
 
     final title = _titleController.text.trim();
     final motivation = _motivationController.text.trim();
@@ -57,6 +104,10 @@ class _CreateMyQuestScreenState extends State<CreateMyQuestScreen> {
       // Webアプリの useCreateMyQuest を参考に実装
       await FirebaseFirestore.instance.collection('my_quests').add({
         'uid': user.uid,
+        // ▼▼▼ 取得元を _currentUserProfile に変更 ▼▼▼
+        'userName': _currentUserProfile!.displayName ?? '名無しさん',
+        'userPhotoURL': _currentUserProfile!.photoURL,
+        // ▲▲▲
         'title': title,
         'motivation': motivation,
         'category': _selectedCategory,
@@ -161,17 +212,22 @@ class _CreateMyQuestScreenState extends State<CreateMyQuestScreen> {
               ],
             ),
             const SizedBox(height: 32),
-            _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : ElevatedButton(
-                    onPressed: _createMyQuest,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                    ),
-                    child: const Text('この目標で冒険を始める'),
-                  ),
+            // ▼▼▼ 読み込み状態のハンドリングを追加 ▼▼▼
+            if (_isUserDataLoading)
+              const Center(child: CircularProgressIndicator())
+            else if (_isLoading)
+              const Center(child: CircularProgressIndicator())
+            else
+              ElevatedButton(
+                onPressed: _createMyQuest,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                ),
+                child: const Text('この目標で冒険を始める'),
+              ),
+            // ▲▲▲
           ],
         ),
       ),

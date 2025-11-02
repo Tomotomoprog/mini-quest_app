@@ -1,3 +1,4 @@
+// lib/friends_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -44,8 +45,9 @@ class _FriendsScreenState extends State<FriendsScreen>
     setState(() {
       _searchResultsStream = FirebaseFirestore.instance
           .collection('users')
-          .where('displayName', isGreaterThanOrEqualTo: query)
-          .where('displayName', isLessThanOrEqualTo: '$query\uf8ff')
+          .where('accountName', isGreaterThanOrEqualTo: query.toLowerCase())
+          .where('accountName',
+              isLessThanOrEqualTo: '${query.toLowerCase()}\uf8ff')
           .limit(10)
           .snapshots()
           .map((snapshot) => snapshot.docs
@@ -55,20 +57,67 @@ class _FriendsScreenState extends State<FriendsScreen>
     });
   }
 
+// lib/friends_screen.dart の _FriendsScreenState クラスの末尾に追加
+
+  // ▼▼▼ この関数を追加 ▼▼▼
+  Widget _buildSearchUsersTab() {
+    return Padding(
+      padding: const EdgeInsets.all(12.0),
+      child: Column(
+        children: [
+          TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              // ▼▼▼ 検索ヒントを accountName に変更 ▼▼▼
+              labelText: 'アカウント名で検索',
+              hintText: '例: tomoyasu_dev',
+              prefixIcon: const Icon(Icons.search),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true, // ◀◀◀ ダークモード用の設定
+              fillColor: Colors.grey[850], // ◀◀◀
+            ),
+            onChanged: _searchUsers,
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _searchResultsStream == null
+                ? const Center(child: Text('アカウント名を入力して検索してください。'))
+                : StreamBuilder<List<UserProfile>>(
+                    stream: _searchResultsStream,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return const Center(child: Text('ユーザーが見つかりません。'));
+                      }
+                      final users = snapshot.data!;
+                      return ListView.builder(
+                        itemCount: users.length,
+                        itemBuilder: (context, index) {
+                          final user = users[index];
+                          return _UserSearchCard(user: user);
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+  // ▲▲▲
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // ▼▼▼ タイトルを追加 ▼▼▼
         title: const Text('MiniQuest'),
-        // ▲▲▲ タイトルを追加 ▲▲▲
-        // toolbarHeight: 0, // 高さを指定していた場合は削除
-        // bottom プロパティは削除したまま
       ),
       body: Column(
         children: [
           TabBar(
-            // TabBarはbody内に配置
             controller: _tabController,
             tabs: const [
               Tab(text: 'フレンド'),
@@ -91,7 +140,6 @@ class _FriendsScreenState extends State<FriendsScreen>
     );
   }
 
-  // (以降の _buildNotificationsTab, _formatRelativeTime, _buildFriendsListTab, _buildSearchUsersTab などは変更なし)
   Widget _buildNotificationsTab() {
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
     if (currentUid == null) return const Center(child: Text("ログインしてください"));
@@ -124,7 +172,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                 ? Icons.favorite
                 : Icons.chat_bubble;
             final color = notification.type == 'like'
-                ? Colors.redAccent
+                ? Theme.of(context).colorScheme.primary
                 : Colors.blueAccent;
             final message = notification.type == 'like'
                 ? 'あなたの投稿に「いいね！」しました'
@@ -187,82 +235,57 @@ class _FriendsScreenState extends State<FriendsScreen>
     return 'たった今';
   }
 
+  // ▼▼▼ フレンドリストタブのレイアウトを修正 ▼▼▼
   Widget _buildFriendsListTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(12.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('フレンド申請', style: Theme.of(context).textTheme.titleLarge),
-          _buildFriendsList(FriendshipStatus.pending),
-          const SizedBox(height: 24),
-          Text('フレンド', style: Theme.of(context).textTheme.titleLarge),
-          _buildFriendsList(FriendshipStatus.accepted),
-        ],
-      ),
-    );
-  }
+          // 1. 探す欄からのフレンド申請
+          Text('探す欄からのフレンド申請', style: Theme.of(context).textTheme.titleLarge),
+          _buildFriendsList(
+              FriendshipStatus.quest_pending), // ◀◀◀ 'quest_pending'
 
-  Widget _buildSearchUsersTab() {
-    return Padding(
-      padding: const EdgeInsets.all(12.0),
-      child: Column(
-        children: [
-          TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              labelText: 'ユーザー名で検索',
-              prefixIcon: const Icon(Icons.search),
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onChanged: _searchUsers,
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: _searchResultsStream == null
-                ? const Center(child: Text('ユーザー名を入力して検索してください。'))
-                : StreamBuilder<List<UserProfile>>(
-                    stream: _searchResultsStream,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                        return const Center(child: Text('ユーザーが見つかりません。'));
-                      }
-                      final users = snapshot.data!;
-                      return ListView.builder(
-                        itemCount: users.length,
-                        itemBuilder: (context, index) {
-                          final user = users[index];
-                          return _UserSearchCard(user: user);
-                        },
-                      );
-                    },
-                  ),
-          ),
+          const SizedBox(height: 24),
+
+          // 2. 通常のフレンド申請
+          Text('フレンド申請', style: Theme.of(context).textTheme.titleLarge),
+          _buildFriendsList(FriendshipStatus.pending), // ◀◀◀ 'pending'
+
+          const SizedBox(height: 24),
+
+          // 3. フレンド一覧
+          Text('フレンド', style: Theme.of(context).textTheme.titleLarge),
+          _buildFriendsList(FriendshipStatus.accepted), // ◀◀◀ 'accepted'
         ],
       ),
     );
   }
+  // ▲▲▲
 
   Widget _buildFriendsList(FriendshipStatus status) {
     final currentUid = FirebaseAuth.instance.currentUser!.uid;
-    final stream = (status == FriendshipStatus.pending)
-        ? FirebaseFirestore.instance
-            .collection('friendships')
-            .where('receiverId', isEqualTo: currentUid)
-            .where('status', isEqualTo: 'pending')
-            .snapshots()
-        : FirebaseFirestore.instance
-            .collection('friendships')
-            .where('userIds', arrayContains: currentUid)
-            .where('status', isEqualTo: 'accepted')
-            .snapshots();
+
+    // ▼▼▼ クエリを status に応じて変更 ▼▼▼
+    late Query streamQuery;
+
+    if (status == FriendshipStatus.accepted) {
+      streamQuery = FirebaseFirestore.instance
+          .collection('friendships')
+          .where('userIds', arrayContains: currentUid)
+          .where('status', isEqualTo: 'accepted');
+    } else {
+      // 'pending' と 'quest_pending' を status で分岐
+      streamQuery = FirebaseFirestore.instance
+          .collection('friendships')
+          .where('receiverId', isEqualTo: currentUid)
+          .where('status', isEqualTo: status.name); // ◀◀◀ .name で文字列に
+    }
+    // ▲▲▲
 
     return StreamBuilder<QuerySnapshot>(
-      stream: stream,
+      stream: streamQuery.snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const CircularProgressIndicator();
 
@@ -270,9 +293,9 @@ class _FriendsScreenState extends State<FriendsScreen>
         if (docs.isEmpty) {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Text(status == FriendshipStatus.pending
-                ? '新しい申請はありません。'
-                : 'まだフレンドがいません。'),
+            child: Text(status == FriendshipStatus.accepted
+                ? 'まだフレンドがいません。'
+                : '新しい申請はありません。'),
           );
         }
 
@@ -302,7 +325,8 @@ class _FriendsScreenState extends State<FriendsScreen>
                     ),
                     title: Text(user.displayName ?? '名無しさん',
                         style: const TextStyle(fontWeight: FontWeight.bold)),
-                    trailing: status == FriendshipStatus.pending
+                    subtitle: Text("@${user.accountName ?? ''}"),
+                    trailing: status != FriendshipStatus.accepted // 申請系の場合
                         ? Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -320,7 +344,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                               ),
                             ],
                           )
-                        : null,
+                        : null, // 承認済みの場合はボタンなし
                     onTap: status == FriendshipStatus.accepted
                         ? () {
                             Navigator.of(context).push(
@@ -346,11 +370,14 @@ class _FriendsScreenState extends State<FriendsScreen>
     final userIds = docs
         .map((doc) {
           final data = doc.data() as Map<String, dynamic>;
-          final senderId = data['senderId'];
-          return (senderId == null)
-              ? (data['userIds'] as List)
-                  .firstWhere((id) => id != currentUid, orElse: () => null)
-              : senderId;
+
+          if (data.containsKey('userIds')) {
+            final List<dynamic> userIdsList = data['userIds'];
+            return userIdsList.firstWhere((id) => id != currentUid,
+                orElse: () => null);
+          } else {
+            return data['senderId'];
+          }
         })
         .where((id) => id != null)
         .toList();
@@ -439,8 +466,10 @@ class _UserSearchCardState extends State<_UserSearchCard> {
         final status = data['status'];
         if (status == 'accepted') {
           setState(() => _friendshipStatus = FriendshipStatus.accepted);
-        } else if (status == 'pending') {
-          setState(() => _friendshipStatus = FriendshipStatus.pending);
+        } else if (status == 'pending' || status == 'quest_pending') {
+          // ◀◀◀ quest_pending も考慮
+          setState(() =>
+              _friendshipStatus = FriendshipStatus.pending); // 申請中は「申請中」でまとめる
         } else {
           setState(() => _friendshipStatus = FriendshipStatus.none);
         }
@@ -448,6 +477,7 @@ class _UserSearchCardState extends State<_UserSearchCard> {
     }
   }
 
+  // ▼▼▼ 申請ロジックを修正 ▼▼▼
   Future<void> _sendFriendRequest() async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
@@ -455,13 +485,14 @@ class _UserSearchCardState extends State<_UserSearchCard> {
     await FirebaseFirestore.instance.collection('friendships').add({
       'senderId': currentUser.uid,
       'receiverId': widget.user.uid,
-      'status': 'pending',
+      'status': 'pending', // ◀◀◀ 通常の 'pending' を使用
       'createdAt': FieldValue.serverTimestamp(),
       'userIds': [currentUser.uid, widget.user.uid],
     });
 
     setState(() => _friendshipStatus = FriendshipStatus.pending);
   }
+  // ▲▲▲
 
   @override
   Widget build(BuildContext context) {
@@ -476,6 +507,7 @@ class _UserSearchCardState extends State<_UserSearchCard> {
         ),
         title: Text(widget.user.displayName ?? '名無しさん',
             style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text("@${widget.user.accountName ?? ''}"),
         trailing: _buildTrailingButton(),
         onTap: () {
           Navigator.of(context).push(
@@ -495,13 +527,19 @@ class _UserSearchCardState extends State<_UserSearchCard> {
 
     switch (_friendshipStatus!) {
       case FriendshipStatus.accepted:
-        return const Chip(
-            label: Text('フレンド'), avatar: Icon(Icons.check, size: 16));
-      case FriendshipStatus.pending:
+        return Chip(
+            label: Text('フレンド', style: TextStyle(color: Colors.green[100])),
+            backgroundColor: Colors.green[800]?.withOpacity(0.5),
+            avatar: Icon(Icons.check, size: 16, color: Colors.green[100]));
+      case FriendshipStatus.pending: // 'pending' と 'quest_pending' 両方
         return const Chip(label: Text('申請中'));
       case FriendshipStatus.none:
         return ElevatedButton(
           onPressed: _sendFriendRequest,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            foregroundColor: Colors.white,
+          ),
           child: const Text('申請'),
         );
       default:
