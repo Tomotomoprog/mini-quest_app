@@ -268,7 +268,7 @@ class _ActionButton extends StatelessWidget {
 }
 // ▲▲▲
 
-// ▼▼▼ [変更なし] カテゴリごとのクエストをまとめるカード ▼▼▼
+// ▼▼▼ [修正] カテゴリごとのクエストをまとめるカード ▼▼▼
 class _CategoryQuestCard extends StatelessWidget {
   final String categoryName;
   final List<MyQuest> quests;
@@ -281,6 +281,44 @@ class _CategoryQuestCard extends StatelessWidget {
     required this.icon,
     required this.color,
   });
+
+  // ▼▼▼ 応援数を集計するウィジェットを新設 ▼▼▼
+  Widget _buildTotalCheerCount(String myQuestId) {
+    return FutureBuilder<QuerySnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('posts')
+          .where('myQuestId', isEqualTo: myQuestId)
+          .get(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 2));
+        }
+        if (snapshot.hasError) {
+          return const Icon(Icons.error_outline, color: Colors.red, size: 16);
+        }
+
+        int totalCheers = 0;
+        for (var doc in snapshot.data!.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          final likeCount = data['likeCount'] as num? ?? 0; // num として取得
+          totalCheers += likeCount.toInt(); // .toInt() で int に変換
+        }
+
+        return Text(
+          totalCheers.toString(),
+          style: TextStyle(
+            color: Colors.pink[200], // 応援アイコンと同じ色
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        );
+      },
+    );
+  }
+  // ▲▲▲
 
   @override
   Widget build(BuildContext context) {
@@ -330,7 +368,13 @@ class _CategoryQuestCard extends StatelessWidget {
             // クエストリスト
             Column(
               children: quests.map((quest) {
-                return _MyQuestCard(quest: quest, color: color);
+                // ▼▼▼ _MyQuestCard に _buildTotalCheerCount を渡す ▼▼▼
+                return _MyQuestCard(
+                  quest: quest,
+                  color: color,
+                  totalCheerWidget: _buildTotalCheerCount(quest.id),
+                );
+                // ▲▲▲
               }).toList(),
             ),
           ],
@@ -341,12 +385,17 @@ class _CategoryQuestCard extends StatelessWidget {
 }
 // ▲▲▲
 
-// ▼▼▼ [変更なし] 個別のクエストを表示するカード（_CategoryQuestCard の子ウィジェット）▼▼▼
+// ▼▼▼ [修正] 個別のクエストを表示するカード（_CategoryQuestCard の子ウィジェット）▼▼▼
 class _MyQuestCard extends StatelessWidget {
   final MyQuest quest;
   final Color color; // カテゴリ色
+  final Widget totalCheerWidget; // ◀◀◀ 応援数ウィジェットを受け取る
 
-  const _MyQuestCard({required this.quest, required this.color});
+  const _MyQuestCard({
+    required this.quest,
+    required this.color,
+    required this.totalCheerWidget, // ◀◀◀
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -386,6 +435,23 @@ class _MyQuestCard extends StatelessWidget {
                   ),
             ),
             const SizedBox(height: 12),
+            // ▼▼▼ 応援数をプログレスバーの上に追加 ▼▼▼
+            Row(
+              children: [
+                Icon(Icons.local_fire_department,
+                    color: Colors.pink[200], size: 16),
+                const SizedBox(width: 4),
+                totalCheerWidget, // ◀◀◀ 応援数ウィジェットを表示
+                const Spacer(),
+                if (quest.status == 'completed')
+                  Icon(Icons.check_circle, color: Colors.green[600], size: 16)
+                else
+                  Icon(Icons.hourglass_top,
+                      color: secondaryTextColor, size: 16),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // ▲▲▲
             // プログレスバー
             LinearProgressIndicator(
               value: progress,

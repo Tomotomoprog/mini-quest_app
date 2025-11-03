@@ -3,10 +3,14 @@ import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+// ▼▼▼ [修正] import文を相対パスに変更 ▼▼▼
 import '../../models/user_profile.dart';
 import '../../profile_friends_list_screen.dart';
 import '../../utils/progression.dart';
+// ▲▲▲
 
+// ▼▼▼ [修正] 元の StatelessWiget に戻し、正しいコンストラクタを定義 ▼▼▼
 class ProfileStatsTab extends StatelessWidget {
   final UserProfile userProfile;
   final int level;
@@ -22,6 +26,7 @@ class ProfileStatsTab extends StatelessWidget {
     required this.isMyProfile,
     required this.onEditPicture,
   });
+// ▲▲▲
 
   static const categoryColors = {
     'Life': Color(0xFF4ADE80), // green[400]
