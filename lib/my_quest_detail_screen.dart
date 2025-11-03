@@ -12,6 +12,7 @@ import 'comment_screen.dart';
 import 'profile_screen.dart';
 import 'my_quest_post_screen.dart';
 // import 'like_list_screen.dart'; // (不要)
+import 'package:firebase_storage/firebase_storage.dart'; // ◀◀◀ Firebase Storage をインポート
 
 import 'widgets/my_quest_detail/quest_detail_header.dart';
 import 'widgets/my_quest_detail/post_card_widgets.dart'; // (前回のリファクタリングで導入済み)
@@ -169,6 +170,59 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
       }
     });
   }
+
+  // ▼▼▼ 投稿削除のロジックを追加 ▼▼▼
+  Future<void> _showDeleteConfirmDialog(String postId, String? photoURL) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('投稿の削除'),
+          content: const Text('この投稿を本当に削除しますか？この操作は取り消せません。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text('削除', style: TextStyle(color: Colors.red.shade700)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _deletePost(postId, photoURL);
+    }
+  }
+
+  Future<void> _deletePost(String postId, String? photoURL) async {
+    try {
+      // 1. (もしあれば) ストレージの写真を削除
+      if (photoURL != null && photoURL.isNotEmpty) {
+        await FirebaseStorage.instance.refFromURL(photoURL).delete();
+      }
+
+      // 2. 投稿ドキュメントを削除
+      await FirebaseFirestore.instance.collection('posts').doc(postId).delete();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('投稿を削除しました')),
+        );
+      }
+    } catch (e) {
+      print('投稿の削除に失敗しました: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('削除に失敗しました: $e')),
+        );
+      }
+    }
+  }
+  // ▲▲▲
 
   Future<void> _completeQuest() async {
     try {
@@ -348,37 +402,40 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
                               .toList();
 
                           return Column(
-                            children: posts
-                                .map((post) => Card(
-                                      elevation: 2,
-                                      margin: const EdgeInsets.symmetric(
-                                          horizontal: 12.0, vertical: 8.0),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(16)),
-                                      clipBehavior: Clip.antiAlias,
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          PostHeader(
-                                            post: post,
-                                            isFriendOrMyQuest:
-                                                isFriendOrMyQuest,
-                                          ),
-                                          PostContent(post: post),
-                                          if (_currentUserProfile != null)
-                                            PostActions(
-                                              post: post,
-                                              isLiked: _likedPostIds
-                                                  .contains(post.id),
-                                              onLike: () =>
-                                                  _toggleLike(post.id),
-                                            ),
-                                        ],
+                            // ▼▼▼ .map() の中身を修正 ▼▼▼
+                            children: posts.map((post) {
+                              final bool isMyPost = post.uid == _myId;
+                              return Card(
+                                elevation: 2,
+                                margin: const EdgeInsets.symmetric(
+                                    horizontal: 12.0, vertical: 8.0),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16)),
+                                clipBehavior: Clip.antiAlias,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    PostHeader(
+                                      post: post,
+                                      isFriendOrMyQuest: isFriendOrMyQuest,
+                                    ),
+                                    PostContent(post: post),
+                                    if (_currentUserProfile != null)
+                                      PostActions(
+                                        post: post,
+                                        isLiked:
+                                            _likedPostIds.contains(post.id),
+                                        onLike: () => _toggleLike(post.id),
+                                        isMyPost: isMyPost, // ◀◀◀ 引数を追加
+                                        onDelete: () =>
+                                            _showDeleteConfirmDialog(post.id,
+                                                post.photoURL), // ◀◀◀ 引数を追加
                                       ),
-                                    ))
-                                .toList(),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                            // ▲▲▲
                           );
                         },
                       ),

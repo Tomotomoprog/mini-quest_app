@@ -115,17 +115,21 @@ class PostContent extends StatelessWidget {
   }
 }
 
-// ▼▼▼ PostActions ウィジェットを修正 (UIのみ) ▼▼▼
+// ▼▼▼ PostActions ウィジェットを修正 (UI + 削除コールバック) ▼▼▼
 class PostActions extends StatelessWidget {
   final Post post;
   final bool isLiked; // (変数名はそのまま)
   final VoidCallback onLike; // (コールバック名はそのまま)
+  final bool isMyPost; // ◀◀◀ 追加
+  final VoidCallback onDelete; // ◀◀◀ 追加
 
   const PostActions({
     super.key,
     required this.post,
     required this.isLiked,
     required this.onLike,
+    required this.isMyPost, // ◀◀◀ 追加
+    required this.onDelete, // ◀◀◀ 追加
   });
 
   void _showLikeList(BuildContext context) {
@@ -175,6 +179,14 @@ class PostActions extends StatelessWidget {
           ),
           Text(post.commentCount.toString(),
               style: TextStyle(color: iconColor)),
+          // ▼▼▼ 削除メニューボタンを追加 ▼▼▼
+          if (isMyPost)
+            IconButton(
+              icon: Icon(Icons.more_vert, color: iconColor),
+              onPressed: onDelete,
+              tooltip: 'オプション',
+            ),
+          // ▲▲▲
           const Spacer(),
           Text(
             DateFormat('M/d HH:mm').format(post.createdAt.toDate()),

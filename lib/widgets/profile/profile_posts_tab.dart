@@ -10,6 +10,7 @@ import '../../comment_screen.dart';
 import '../../models/user_profile.dart';
 import '../../utils/progression.dart';
 import '../../cheer_list_screen.dart'; // ◀◀◀ cheer_list_screen をインポート
+import 'package:firebase_storage/firebase_storage.dart'; // ◀◀◀ Firebase Storage をインポート
 
 class ProfilePostsTab extends StatefulWidget {
   final String userId;
@@ -116,6 +117,59 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
     });
   }
 
+  // ▼▼▼ 投稿削除のロジックを追加 ▼▼▼
+  Future<void> _showDeleteConfirmDialog(String postId, String? photoURL) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('投稿の削除'),
+          content: const Text('この投稿を本当に削除しますか？この操作は取り消せません。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text('削除', style: TextStyle(color: Colors.red.shade700)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _deletePost(postId, photoURL);
+    }
+  }
+
+  Future<void> _deletePost(String postId, String? photoURL) async {
+    try {
+      // 1. (もしあれば) ストレージの写真を削除
+      if (photoURL != null && photoURL.isNotEmpty) {
+        await FirebaseStorage.instance.refFromURL(photoURL).delete();
+      }
+
+      // 2. 投稿ドキュメントを削除
+      await FirebaseFirestore.instance.collection('posts').doc(postId).delete();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('投稿を削除しました')),
+        );
+      }
+    } catch (e) {
+      print('投稿の削除に失敗しました: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('削除に失敗しました: $e')),
+        );
+      }
+    }
+  }
+  // ▲▲▲
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
@@ -141,6 +195,8 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
           itemCount: posts.length,
           itemBuilder: (context, index) {
             final post = posts[index];
+            // ▼▼▼ isMyPost を正しく判定 ▼▼▼
+            final isMyPost = post.uid == _currentUserProfile?.uid;
             return Card(
               elevation: 2,
               margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -155,8 +211,10 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
                   _PostActions(
                     post: post,
                     isLiked: _likedPostIds.contains(post.id),
-                    isMyPost: true,
+                    isMyPost: isMyPost, // ◀◀◀ 修正
                     onLike: () => _toggleLike(post.id),
+                    onDelete: () => _showDeleteConfirmDialog(
+                        post.id, post.photoURL), // ◀◀◀ 削除コールバックを渡す
                   ),
                 ],
               ),
@@ -265,18 +323,20 @@ class _PostContent extends StatelessWidget {
   }
 }
 
-// ▼▼▼ _PostActions ウィジェットを修正 (UIのみ) ▼▼▼
+// ▼▼▼ _PostActions ウィジェットを修正 (UI + 削除コールバック) ▼▼▼
 class _PostActions extends StatelessWidget {
   final Post post;
   final bool isLiked;
   final bool isMyPost;
   final VoidCallback onLike;
+  final VoidCallback onDelete; // ◀◀◀ 削除コールバックを追加
 
   const _PostActions({
     required this.post,
     required this.isLiked,
     required this.isMyPost,
     required this.onLike,
+    required this.onDelete, // ◀◀◀ 削除コールバックを追加
   });
 
   void _showLikeList(BuildContext context) {
@@ -326,6 +386,14 @@ class _PostActions extends StatelessWidget {
           ),
           Text(post.commentCount.toString(),
               style: TextStyle(color: iconColor)),
+          // ▼▼▼ 削除メニューボタンを追加 ▼▼▼
+          if (isMyPost)
+            IconButton(
+              icon: Icon(Icons.more_vert, color: iconColor),
+              onPressed: onDelete,
+              tooltip: 'オプション',
+            ),
+          // ▲▲▲
           const Spacer(),
           Text(
             DateFormat('M/d HH:mm').format(post.createdAt.toDate()),
