@@ -37,6 +37,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>プロフィール画像や投稿写真を撮影するために使用します。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>投稿する写真を選択するために、写真ライブラリへのアクセスを許可してください。</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

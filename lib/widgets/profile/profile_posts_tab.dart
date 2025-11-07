@@ -1,10 +1,10 @@
 // lib/widgets/profile/profile_posts_tab.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/post.dart';
+import '../../widgets/post_content_widget.dart'; // ◀◀◀ 共通ウィジェットをインポート
 import '../../comment_screen.dart';
 // import '../../profile_screen.dart'; // (不要)
 import '../../models/user_profile.dart';
@@ -207,7 +207,9 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _PostHeader(post: post),
-                  _PostContent(post: post),
+                  // ▼▼▼ 共通ウィジェット PostContentWidget に変更 ▼▼▼
+                  PostContentWidget(post: post),
+                  // ▲▲▲ 共通ウィジェット PostContentWidget に変更 ▲▲▲
                   _PostActions(
                     post: post,
                     isLiked: _likedPostIds.contains(post.id),
@@ -277,51 +279,9 @@ class _PostHeader extends StatelessWidget {
   }
 }
 
-class _PostContent extends StatelessWidget {
-  final Post post;
-  const _PostContent({required this.post});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (post.myQuestTitle != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              margin: const EdgeInsets.only(bottom: 8),
-              decoration: BoxDecoration(
-                  color: Colors.blue.shade900.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.blue.shade700)),
-              child: Text('🚀 ${post.myQuestTitle}',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade100,
-                      fontSize: 12)),
-            ),
-          if (post.text.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: Text(post.text,
-                  style: const TextStyle(fontSize: 15, height: 1.4)),
-            ),
-          if (post.photoURL != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4.0, bottom: 8.0),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12.0),
-                child: Image.network(post.photoURL!,
-                    width: double.infinity, fit: BoxFit.cover),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
+// ▼▼▼ _PostContent ウィジェットは削除 (共通ウィジェットに移動したため) ▼▼▼
+// class _PostContent extends ... { ... }
+// ▲▲▲ _PostContent ウィジェットは削除 ▲▲▲
 
 // ▼▼▼ _PostActions ウィジェットを修正 (UI + 削除コールバック) ▼▼▼
 class _PostActions extends StatelessWidget {

@@ -8,8 +8,9 @@ import 'comment_screen.dart';
 import 'profile_screen.dart';
 import 'models/user_profile.dart';
 import 'utils/progression.dart';
-import 'cheer_list_screen.dart'; // ◀◀◀ cheer_list_screen をインポート
-import 'package:firebase_storage/firebase_storage.dart'; // ◀◀◀ Firebase Storage をインポート
+import 'cheer_list_screen.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'widgets/post_content_widget.dart'; // ◀◀◀ 新しい共通ウィジェットをインポート
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -267,7 +268,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _PostHeader(post: post),
-                    _PostContent(post: post),
+                    // ▼▼▼ 共通ウィジェットを使用 ▼▼▼
+                    PostContentWidget(post: post),
+                    // ▲▲▲ 共通ウィジェットを使用 ▲▲▲
                     _PostActions(
                       post: post,
                       isLiked: _likedPostIds.contains(post.id), // (変数名はそのまま)
@@ -343,51 +346,9 @@ class _PostHeader extends StatelessWidget {
   }
 }
 
-class _PostContent extends StatelessWidget {
-  final Post post;
-  const _PostContent({required this.post});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (post.myQuestTitle != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              margin: const EdgeInsets.only(bottom: 8),
-              decoration: BoxDecoration(
-                  color: Colors.blue.shade900.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.blue.shade700)),
-              child: Text('🚀 ${post.myQuestTitle}',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade100,
-                      fontSize: 12)),
-            ),
-          if (post.text.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: Text(post.text,
-                  style: const TextStyle(fontSize: 15, height: 1.4)),
-            ),
-          if (post.photoURL != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4.0, bottom: 8.0),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12.0),
-                child: Image.network(post.photoURL!,
-                    width: double.infinity, fit: BoxFit.cover),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
+// ▼▼▼ _PostContent ウィジェットは削除 (共通ウィジェットに移動したため) ▼▼▼
+// class _PostContent extends ... { ... }
+// ▲▲▲ _PostContent ウィジェットは削除 ▲▲▲
 
 // ▼▼▼ _PostActions ウィジェットを修正 (UI + 削除コールバック) ▼▼▼
 class _PostActions extends StatelessWidget {
