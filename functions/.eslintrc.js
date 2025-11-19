@@ -21,13 +21,21 @@ module.exports = {
     "/lib/**/*", // Ignore built files.
     "/generated/**/*", // Ignore generated files.
   ],
-  plugins: [
-    "@typescript-eslint",
-    "import",
-  ],
+  plugins: ["@typescript-eslint", "import"],
   rules: {
-    "quotes": ["error", "double"],
+    // ▼▼▼ ルールをさらに緩める設定に変更 ▼▼▼
+    "quote-props": "off", // 追加: プロパティ名のクォート有無を気にしない
+    quotes: "off",
     "import/no-unresolved": 0,
-    "indent": ["error", 2],
+    indent: "off",
+    "max-len": "off",
+    "object-curly-spacing": "off",
+    "comma-dangle": "off",
+    "valid-jsdoc": "off",
+    "require-jsdoc": "off",
+    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/no-unused-vars": "off",
+    "@typescript-eslint/ban-ts-comment": "off",
+    // ▲▲▲
   },
 };

@@ -2,7 +2,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-// import 'package:intl/intl.dart'; // (不要)
 import 'models/my_quest.dart';
 import 'models/post.dart';
 import 'models/user_profile.dart';
@@ -11,11 +10,10 @@ import 'utils/progression.dart';
 import 'comment_screen.dart';
 import 'profile_screen.dart';
 import 'my_quest_post_screen.dart';
-// import 'like_list_screen.dart'; // (不要)
-import 'package:firebase_storage/firebase_storage.dart'; // ◀◀◀ Firebase Storage をインポート
+import 'package:firebase_storage/firebase_storage.dart';
 
 import 'widgets/my_quest_detail/quest_detail_header.dart';
-import 'widgets/my_quest_detail/post_card_widgets.dart'; // (前回のリファクタリングで導入済み)
+import 'widgets/my_quest_detail/post_card_widgets.dart';
 
 class MyQuestDetailScreen extends StatefulWidget {
   final MyQuest quest;
@@ -27,7 +25,7 @@ class MyQuestDetailScreen extends StatefulWidget {
 }
 
 class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
-  Set<String> _likedPostIds = {}; // (DB構造は変えないので変数名はそのまま)
+  Set<String> _likedPostIds = {};
   UserProfile? _currentUserProfile;
 
   FriendshipStatus _friendshipStatus = FriendshipStatus.none;
@@ -48,35 +46,42 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
       return;
     }
 
-    final userDocFuture =
-        FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-    final likesFuture = FirebaseFirestore.instance
-        .collectionGroup('likes') // (DB構造は 'likes' のまま)
-        .where('uid', isEqualTo: user.uid)
-        .get();
+    try {
+      final userDocFuture =
+          FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final likesFuture = FirebaseFirestore.instance
+          .collectionGroup('likes')
+          .where('uid', isEqualTo: user.uid)
+          .get();
 
-    final responses = await Future.wait([
-      userDocFuture,
-      likesFuture,
-      _checkFriendshipStatus(),
-    ]);
+      final responses = await Future.wait([
+        userDocFuture,
+        likesFuture,
+        _checkFriendshipStatus(),
+      ]);
 
-    final userDoc = responses[0] as DocumentSnapshot;
-    final likesSnapshot = responses[1] as QuerySnapshot;
+      final userDoc = responses[0] as DocumentSnapshot;
+      final likesSnapshot = responses[1] as QuerySnapshot;
 
-    if (mounted) {
-      if (userDoc.exists) {
-        final profile = UserProfile.fromFirestore(userDoc);
+      if (mounted) {
+        if (userDoc.exists) {
+          final profile = UserProfile.fromFirestore(userDoc);
+          setState(() {
+            _currentUserProfile = profile;
+          });
+        }
         setState(() {
-          _currentUserProfile = profile;
+          _likedPostIds = likesSnapshot.docs
+              .map((doc) => doc.reference.parent.parent!.id)
+              .toSet();
         });
       }
-      setState(() {
-        _likedPostIds = likesSnapshot.docs
-            .map((doc) => doc.reference.parent.parent!.id)
-            .toSet();
-        _isLoadingStatus = false;
-      });
+    } catch (e) {
+      print("Error fetching data: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingStatus = false);
+      }
     }
   }
 
@@ -117,13 +122,11 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
     return status;
   }
 
-  // ▼▼▼ 通知タイプを 'cheer' に変更 ▼▼▼
   Future<void> _toggleLike(String postId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final postRef = FirebaseFirestore.instance.collection('posts').doc(postId);
-    final likeRef =
-        postRef.collection('likes').doc(user.uid); // (DB構造は 'likes' のまま)
+    final likeRef = postRef.collection('likes').doc(user.uid);
     final isLiked = _likedPostIds.contains(postId);
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
@@ -134,18 +137,16 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
 
       if (isLiked) {
         transaction.delete(likeRef);
-        transaction.update(postRef,
-            {'likeCount': FieldValue.increment(-1)}); // (DB構造は 'likeCount' のまま)
+        transaction.update(postRef, {'likeCount': FieldValue.increment(-1)});
       } else {
         transaction.set(likeRef,
             {'uid': user.uid, 'createdAt': FieldValue.serverTimestamp()});
-        transaction.update(postRef,
-            {'likeCount': FieldValue.increment(1)}); // (DB構造は 'likeCount' のまま)
+        transaction.update(postRef, {'likeCount': FieldValue.increment(1)});
         if (shouldNotify) {
           final notificationRef =
               FirebaseFirestore.instance.collection('notifications').doc();
           transaction.set(notificationRef, {
-            'type': 'cheer', // ◀◀◀ 通知タイプを 'cheer' に変更
+            'type': 'cheer',
             'fromUserId': user.uid,
             'fromUserName': user.displayName ?? '名無しさん',
             'fromUserAvatar': user.photoURL,
@@ -160,7 +161,6 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
         }
       }
     });
-    // ▲▲▲
 
     setState(() {
       if (isLiked) {
@@ -171,7 +171,6 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
     });
   }
 
-  // ▼▼▼ 投稿削除のロジックを追加 ▼▼▼
   Future<void> _showDeleteConfirmDialog(String postId, String? photoURL) async {
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -200,14 +199,10 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
 
   Future<void> _deletePost(String postId, String? photoURL) async {
     try {
-      // 1. (もしあれば) ストレージの写真を削除
       if (photoURL != null && photoURL.isNotEmpty) {
         await FirebaseStorage.instance.refFromURL(photoURL).delete();
       }
-
-      // 2. 投稿ドキュメントを削除
       await FirebaseFirestore.instance.collection('posts').doc(postId).delete();
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('投稿を削除しました')),
@@ -222,7 +217,6 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
       }
     }
   }
-  // ▲▲▲
 
   Future<void> _completeQuest() async {
     try {
@@ -230,14 +224,19 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
           .collection('my_quests')
           .doc(widget.quest.id)
           .update({'status': 'completed'});
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('クエスト達成！おめでとうございます！'), backgroundColor: Colors.green),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('クエスト達成！おめでとうございます！'),
+              backgroundColor: Colors.green),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('エラーが発生しました: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('エラーが発生しました: $e')),
+        );
+      }
     }
   }
 
@@ -247,7 +246,8 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('クエストを削除'),
-          content: const Text('このマイクエストを本当に削除しますか？\n関連する投稿は削除されません。'),
+          content:
+              const Text('このマイクエストを本当に削除しますか？\n関連する投稿は削除されませんが、紐付けは解除されます。'),
           actions: <Widget>[
             TextButton(
               child: const Text('キャンセル'),
@@ -292,7 +292,6 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
 
     try {
       final batch = FirebaseFirestore.instance.batch();
-
       final friendshipRef =
           FirebaseFirestore.instance.collection('friendships').doc();
       batch.set(friendshipRef, {
@@ -402,7 +401,6 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
                               .toList();
 
                           return Column(
-                            // ▼▼▼ .map() の中身を修正 ▼▼▼
                             children: posts.map((post) {
                               final bool isMyPost = post.uid == _myId;
                               return Card(
@@ -426,16 +424,15 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
                                         isLiked:
                                             _likedPostIds.contains(post.id),
                                         onLike: () => _toggleLike(post.id),
-                                        isMyPost: isMyPost, // ◀◀◀ 引数を追加
+                                        isMyPost: isMyPost,
                                         onDelete: () =>
-                                            _showDeleteConfirmDialog(post.id,
-                                                post.photoURL), // ◀◀◀ 引数を追加
+                                            _showDeleteConfirmDialog(
+                                                post.id, post.photoURL),
                                       ),
                                   ],
                                 ),
                               );
                             }).toList(),
-                            // ▲▲▲
                           );
                         },
                       ),
@@ -502,16 +499,24 @@ class _MyQuestDetailScreenState extends State<MyQuestDetailScreen> {
                     ),
                   );
                 } else {
+                  // ▼▼▼ 修正箇所: Center を削除し Row を使用して高さの占有を防ぐ ▼▼▼
                   return Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Center(
-                          child: Chip(
-                        label: Text('🎉 この目標は達成済みです！',
-                            style: TextStyle(color: Colors.green[100])),
-                        backgroundColor: Colors.green[800]?.withOpacity(0.5),
-                        avatar:
-                            Icon(Icons.emoji_events, color: Colors.green[100]),
-                      )));
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Chip(
+                          label: Text('🎉 この目標は達成済みです！',
+                              style: TextStyle(color: Colors.green[100])),
+                          backgroundColor: Colors.green[800]?.withOpacity(0.5),
+                          avatar: Icon(Icons.emoji_events,
+                              color: Colors.green[100]),
+                        ),
+                      ],
+                    ),
+                  );
+                  // ▲▲▲
                 }
               })
           : null,

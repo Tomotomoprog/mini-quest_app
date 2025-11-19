@@ -224,16 +224,6 @@ class _PostScreenState extends State<PostScreen> {
         if (questCategory != null) {
           updates['stats.$questCategory'] = FieldValue.increment(1);
         }
-        // ▼▼▼ totalEffortMinutes の更新に関する try-catch ブロックを削除 ▼▼▼
-        // try {
-        //     // ignore: unnecessary_null_comparison
-        //     if (timeSpent != null && timeSpent > 0) { // Should throw here
-        //       updates['totalEffortMinutes'] = FieldValue.increment(timeSpent);
-        //     }
-        // } catch (e) {
-        //     // Expected error, do nothing.
-        // }
-        // ▲▲▲ totalEffortMinutes の更新に関する try-catch ブロックを削除 ▲▲▲
 
         transaction.set(userRef, updates, SetOptions(merge: true));
       });
@@ -310,6 +300,45 @@ class _PostScreenState extends State<PostScreen> {
               ),
               maxLines: 8,
             ),
+            // ▼▼▼ 変更点: テキスト入力のすぐ下に操作ボタンを配置 ▼▼▼
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  tooltip: '写真を追加',
+                  onPressed: _pickImage,
+                ),
+                const SizedBox(width: 8),
+                ActionChip(
+                  avatar: Icon(Icons.flag_outlined,
+                      color: _selectedMyQuest != null
+                          ? Theme.of(context).primaryColor
+                          : null,
+                      size: 20),
+                  label: Text(
+                    _selectedMyQuest != null
+                        ? _selectedMyQuest!.title
+                        : 'マイクエストに紐付ける',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onPressed: _showMyQuestPicker,
+                  backgroundColor: _selectedMyQuest != null
+                      ? Theme.of(context).primaryColor.withOpacity(0.12)
+                      : null,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: BorderSide(
+                      color: _selectedMyQuest != null
+                          ? Theme.of(context).primaryColor
+                          : Colors.grey.shade400,
+                      width: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            // ▲▲▲ 変更点終了 ▲▲▲
             const SizedBox(height: 16),
             if (_imageFile != null)
               Stack(
@@ -350,44 +379,8 @@ class _PostScreenState extends State<PostScreen> {
               icon: const Icon(Icons.send),
               label: const Text('投稿する'),
             ),
-      bottomNavigationBar: BottomAppBar(
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.photo_camera_outlined),
-              tooltip: '写真を追加',
-              onPressed: _pickImage,
-            ),
-            const SizedBox(width: 8),
-            ActionChip(
-              avatar: Icon(Icons.flag_outlined,
-                  color: _selectedMyQuest != null
-                      ? Theme.of(context).primaryColor
-                      : null,
-                  size: 20),
-              label: Text(
-                _selectedMyQuest != null
-                    ? _selectedMyQuest!.title
-                    : 'マイクエストに紐付ける',
-                overflow: TextOverflow.ellipsis,
-              ),
-              onPressed: _showMyQuestPicker,
-              backgroundColor: _selectedMyQuest != null
-                  ? Theme.of(context).primaryColor.withOpacity(0.12)
-                  : null,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-                side: BorderSide(
-                  color: _selectedMyQuest != null
-                      ? Theme.of(context).primaryColor
-                      : Colors.grey.shade400,
-                  width: 1,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      // ▼▼▼ 変更点: BottomNavigationBar を削除 ▼▼▼
+      // bottomNavigationBar: BottomAppBar(...),
     );
   }
 }

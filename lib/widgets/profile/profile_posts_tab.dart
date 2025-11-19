@@ -3,14 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+
 import '../../models/post.dart';
-import '../../widgets/post_content_widget.dart'; // ◀◀◀ 共通ウィジェットをインポート
-import '../../comment_screen.dart';
-// import '../../profile_screen.dart'; // (不要)
 import '../../models/user_profile.dart';
-import '../../utils/progression.dart';
-import '../../cheer_list_screen.dart'; // ◀◀◀ cheer_list_screen をインポート
-import 'package:firebase_storage/firebase_storage.dart'; // ◀◀◀ Firebase Storage をインポート
+import '../../comment_screen.dart';
+import '../../cheer_list_screen.dart';
+import '../post_content_widget.dart'; // 共通ウィジェット
 
 class ProfilePostsTab extends StatefulWidget {
   final String userId;
@@ -21,7 +20,7 @@ class ProfilePostsTab extends StatefulWidget {
 }
 
 class _ProfilePostsTabState extends State<ProfilePostsTab> {
-  Set<String> _likedPostIds = {}; // (DB構造は変えないので変数名はそのまま)
+  Set<String> _likedPostIds = {};
   UserProfile? _currentUserProfile;
 
   @override
@@ -37,7 +36,7 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
     final userDocFuture =
         FirebaseFirestore.instance.collection('users').doc(user.uid).get();
     final likesFuture = FirebaseFirestore.instance
-        .collectionGroup('likes') // (DB構造は 'likes' のまま)
+        .collectionGroup('likes')
         .where('uid', isEqualTo: user.uid)
         .get();
 
@@ -61,37 +60,31 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
     }
   }
 
-  // ▼▼▼ 通知タイプを 'cheer' に変更 ▼▼▼
   Future<void> _toggleLike(String postId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final postRef = FirebaseFirestore.instance.collection('posts').doc(postId);
-    final likeRef =
-        postRef.collection('likes').doc(user.uid); // (DB構造は 'likes' のまま)
+    final likeRef = postRef.collection('likes').doc(user.uid);
     final isLiked = _likedPostIds.contains(postId);
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
       final postSnapshot = await transaction.get(postRef);
       if (!postSnapshot.exists) return;
-
       final post = Post.fromFirestore(postSnapshot);
       final shouldNotify = !isLiked && post.uid != user.uid;
 
       if (isLiked) {
         transaction.delete(likeRef);
-        transaction.update(postRef,
-            {'likeCount': FieldValue.increment(-1)}); // (DB構造は 'likeCount' のまま)
+        transaction.update(postRef, {'likeCount': FieldValue.increment(-1)});
       } else {
         transaction.set(likeRef,
             {'uid': user.uid, 'createdAt': FieldValue.serverTimestamp()});
-        transaction.update(postRef,
-            {'likeCount': FieldValue.increment(1)}); // (DB構造は 'likeCount' のまま)
-
+        transaction.update(postRef, {'likeCount': FieldValue.increment(1)});
         if (shouldNotify) {
           final notificationRef =
               FirebaseFirestore.instance.collection('notifications').doc();
           transaction.set(notificationRef, {
-            'type': 'cheer', // ◀◀◀ 通知タイプを 'cheer' に変更
+            'type': 'cheer',
             'fromUserId': user.uid,
             'fromUserName': user.displayName ?? '名無しさん',
             'fromUserAvatar': user.photoURL,
@@ -106,7 +99,6 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
         }
       }
     });
-    // ▲▲▲
 
     setState(() {
       if (isLiked) {
@@ -117,7 +109,6 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
     });
   }
 
-  // ▼▼▼ 投稿削除のロジックを追加 ▼▼▼
   Future<void> _showDeleteConfirmDialog(String postId, String? photoURL) async {
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -146,14 +137,10 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
 
   Future<void> _deletePost(String postId, String? photoURL) async {
     try {
-      // 1. (もしあれば) ストレージの写真を削除
       if (photoURL != null && photoURL.isNotEmpty) {
         await FirebaseStorage.instance.refFromURL(photoURL).delete();
       }
-
-      // 2. 投稿ドキュメントを削除
       await FirebaseFirestore.instance.collection('posts').doc(postId).delete();
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('投稿を削除しました')),
@@ -168,10 +155,9 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
       }
     }
   }
-  // ▲▲▲
 
-  @override
-  Widget build(BuildContext context) {
+  // タブごとのリストを構築するメソッド
+  Widget _buildPostList(bool showShortPostsOnly) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('posts')
@@ -184,18 +170,34 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
           return const Center(child: CircularProgressIndicator());
         }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text('まだ投稿がありません。'));
+          return Center(
+            child: Text(showShortPostsOnly ? '一言投稿はありません' : '投稿はありません'),
+          );
         }
 
-        final posts =
+        // 全データを取得してからフィルタリング
+        final allPosts =
             snapshot.data!.docs.map((doc) => Post.fromFirestore(doc)).toList();
+
+        final posts = allPosts.where((post) {
+          if (showShortPostsOnly) {
+            return post.isShortPost;
+          } else {
+            return !post.isShortPost;
+          }
+        }).toList();
+
+        if (posts.isEmpty) {
+          return Center(
+            child: Text(showShortPostsOnly ? '一言投稿はありません' : '投稿はありません'),
+          );
+        }
 
         return ListView.builder(
           padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
           itemCount: posts.length,
           itemBuilder: (context, index) {
             final post = posts[index];
-            // ▼▼▼ isMyPost を正しく判定 ▼▼▼
             final isMyPost = post.uid == _currentUserProfile?.uid;
             return Card(
               elevation: 2,
@@ -207,16 +209,14 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _PostHeader(post: post),
-                  // ▼▼▼ 共通ウィジェット PostContentWidget に変更 ▼▼▼
-                  PostContentWidget(post: post),
-                  // ▲▲▲ 共通ウィジェット PostContentWidget に変更 ▲▲▲
+                  PostContentWidget(post: post), // 共通ウィジェット
                   _PostActions(
                     post: post,
                     isLiked: _likedPostIds.contains(post.id),
-                    isMyPost: isMyPost, // ◀◀◀ 修正
+                    isMyPost: isMyPost,
                     onLike: () => _toggleLike(post.id),
-                    onDelete: () => _showDeleteConfirmDialog(
-                        post.id, post.photoURL), // ◀◀◀ 削除コールバックを渡す
+                    onDelete: () =>
+                        _showDeleteConfirmDialog(post.id, post.photoURL),
                   ),
                 ],
               ),
@@ -224,6 +224,32 @@ class _ProfilePostsTabState extends State<ProfilePostsTab> {
           },
         );
       },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // タブコントローラーを埋め込む
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          const TabBar(
+            tabs: [
+              Tab(text: 'メイン'),
+              Tab(text: '一言'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _buildPostList(false), // メイン投稿
+                _buildPostList(true), // 一言投稿
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -235,7 +261,7 @@ class _PostHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: null,
+      onTap: null, // プロフィール内なのでタップ無効でOK（遷移先が自分になるため）
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         child: Row(
@@ -279,31 +305,24 @@ class _PostHeader extends StatelessWidget {
   }
 }
 
-// ▼▼▼ _PostContent ウィジェットは削除 (共通ウィジェットに移動したため) ▼▼▼
-// class _PostContent extends ... { ... }
-// ▲▲▲ _PostContent ウィジェットは削除 ▲▲▲
-
-// ▼▼▼ _PostActions ウィジェットを修正 (UI + 削除コールバック) ▼▼▼
 class _PostActions extends StatelessWidget {
   final Post post;
   final bool isLiked;
   final bool isMyPost;
   final VoidCallback onLike;
-  final VoidCallback onDelete; // ◀◀◀ 削除コールバックを追加
+  final VoidCallback onDelete;
 
   const _PostActions({
     required this.post,
     required this.isLiked,
     required this.isMyPost,
     required this.onLike,
-    required this.onDelete, // ◀◀◀ 削除コールバックを追加
+    required this.onDelete,
   });
 
   void _showLikeList(BuildContext context) {
-    // (DB構造は 'likeCount' のまま)
     if (post.likeCount > 0) {
       Navigator.of(context).push(MaterialPageRoute(
-        // ▼▼▼ CheerListScreen に変更 ▼▼▼
         builder: (context) => CheerListScreen(postId: post.id),
       ));
     }
@@ -319,11 +338,10 @@ class _PostActions extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            // ▼▼▼ アイコンを応援 (炎) に変更 ▼▼▼
             icon: Icon(
                 isLiked
-                    ? Icons.local_fire_department // 押されている
-                    : Icons.local_fire_department_outlined, // 押されていない
+                    ? Icons.local_fire_department
+                    : Icons.local_fire_department_outlined,
                 color: isLiked ? accentColor : iconColor),
             onPressed: onLike,
           ),
@@ -333,7 +351,6 @@ class _PostActions extends StatelessWidget {
             child: Padding(
               padding:
                   const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
-              // ▼▼▼ post.likeCount を参照 (DB構造はそのまま) ▼▼▼
               child: Text(post.likeCount.toString(),
                   style: TextStyle(color: iconColor)),
             ),
@@ -346,14 +363,12 @@ class _PostActions extends StatelessWidget {
           ),
           Text(post.commentCount.toString(),
               style: TextStyle(color: iconColor)),
-          // ▼▼▼ 削除メニューボタンを追加 ▼▼▼
           if (isMyPost)
             IconButton(
               icon: Icon(Icons.more_vert, color: iconColor),
               onPressed: onDelete,
               tooltip: 'オプション',
             ),
-          // ▲▲▲
           const Spacer(),
           Text(
             DateFormat('M/d HH:mm').format(post.createdAt.toDate()),

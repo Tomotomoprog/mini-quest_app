@@ -1,5 +1,5 @@
-import { onDocumentCreated } from "firebase-functions/v2/firestore"; // ◀◀◀ v2のimportに変更
-import * as logger from "firebase-functions/logger"; // ◀◀◀ v2のロガーに変更
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 
 admin.initializeApp();
@@ -13,15 +13,15 @@ const getJSTDate = (date: Date): string => {
   return jstDate.toISOString().split("T")[0]; // YYYY-MM-DD
 };
 
-// ▼▼▼ [修正] v2 (onDocumentCreated) の構文に変更 ▼▼▼
+// ---------------------------------------------------------
+// 既存の関数: 投稿時のストリーク更新
+// ---------------------------------------------------------
 export const updateStreakOnPostCreate = onDocumentCreated(
   {
-    document: "posts/{postId}", // ◀◀◀ 監視対象のドキュメント
-    region: "asia-northeast1", // ◀◀◀ リージョン指定
+    document: "posts/{postId}",
+    region: "asia-northeast1",
   },
-  async (event) => { // ◀◀◀ event パラメータ
-    
-    // ◀◀◀ event から snapshot を取得
+  async (event) => {
     const snapshot = event.data;
     if (!snapshot) {
       logger.log("No data associated with the event.");
@@ -35,13 +35,12 @@ export const updateStreakOnPostCreate = onDocumentCreated(
     }
 
     const uid = post.uid;
-    const postCreatedAt = post.createdAt.toDate(); // 投稿の作成日時(Timestamp -> Date)
+    const postCreatedAt = post.createdAt.toDate();
 
-    // [重要] 'user_profiles' を参照するようにしています
+    // [注意] ここは既存のロジック通り 'user_profiles' を使用
     const userProfileRef = db.collection("user_profiles").doc(uid);
 
     try {
-      // トランザクションで安全にプロフィールを更新
       await db.runTransaction(async (transaction) => {
         const userProfileDoc = await transaction.get(userProfileRef);
         if (!userProfileDoc.exists) {
@@ -52,16 +51,13 @@ export const updateStreakOnPostCreate = onDocumentCreated(
         const profileData = userProfileDoc.data();
         if (!profileData) return;
 
-        // 現在の連続記録と最後の投稿日を取得
         const currentStreak: number = profileData.currentStreak ?? 0;
         const lastPostTimestamp: admin.firestore.Timestamp | undefined =
           profileData.lastPostDate;
 
-        // JST（日本時間）で日付を比較
         const todayJST = getJSTDate(postCreatedAt);
 
         if (!lastPostTimestamp) {
-          // 1. 初めての投稿
           logger.log("初めての投稿。ストリークを1に設定。");
           transaction.update(userProfileRef, {
             currentStreak: 1,
@@ -74,28 +70,25 @@ export const updateStreakOnPostCreate = onDocumentCreated(
         const lastPostDayJST = getJSTDate(lastPostDate);
 
         if (lastPostDayJST === todayJST) {
-          // 2. 今日すでに投稿している（日付が変わっていない）
           logger.log("本日2回目以降の投稿。ストリークは変更なし。");
-          // 最後の投稿日時だけ最新のものに更新
           transaction.update(userProfileRef, {
             lastPostDate: postCreatedAt,
           });
           return;
         }
 
-        // 昨日の日付をJSTで計算
-        const yesterdayDate = new Date(postCreatedAt.getTime() - 24 * 60 * 60 * 1000);
+        const yesterdayDate = new Date(
+          postCreatedAt.getTime() - 24 * 60 * 60 * 1000
+        );
         const yesterdayJST = getJSTDate(yesterdayDate);
 
         if (lastPostDayJST === yesterdayJST) {
-          // 3. 昨日から連続している
           logger.log("連続投稿成功。ストリークをインクリメント。");
           transaction.update(userProfileRef, {
-            currentStreak: currentStreak + 1, // トランザクション内で読み取った値に+1する
+            currentStreak: currentStreak + 1,
             lastPostDate: postCreatedAt,
           });
         } else {
-          // 4. 連続が途切れている（一昨日以前）
           logger.log("連続が途切れた。ストリークを1にリセット。");
           transaction.update(userProfileRef, {
             currentStreak: 1,
@@ -109,4 +102,101 @@ export const updateStreakOnPostCreate = onDocumentCreated(
     return;
   }
 );
-// ▲▲▲
+
+// ---------------------------------------------------------
+// ▼▼▼ 新規追加: プッシュ通知送信関数 ▼▼▼
+// ---------------------------------------------------------
+export const sendPushNotification = onDocumentCreated(
+  {
+    document: "notifications/{notificationId}", // notificationsコレクションへの追加を検知
+    region: "asia-northeast1",
+  },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) {
+      logger.log("No data associated with the event.");
+      return;
+    }
+
+    const notification = snapshot.data();
+    const targetUserId = notification.targetUserId; // 通知を送る相手のID
+
+    // 自分のアクションによる通知なら送らない（念のため）
+    if (notification.fromUserId === targetUserId) {
+      return;
+    }
+
+    try {
+      // 1. 通知先ユーザーのFCMトークンを取得
+      // (Flutter側で 'users' コレクションに保存した 'fcmToken' を読みに行く)
+      const userDoc = await db.collection("users").doc(targetUserId).get();
+
+      if (!userDoc.exists) {
+        logger.log(`User ${targetUserId} not found.`);
+        return;
+      }
+
+      const userData = userDoc.data();
+      const fcmToken = userData?.fcmToken;
+
+      if (!fcmToken) {
+        logger.log(`User ${targetUserId} has no FCM token registered.`);
+        return;
+      }
+
+      // 2. 通知のメッセージ内容を作成
+      let title = "MiniQuest 通知";
+      let body = "新しいお知らせがあります";
+
+      const senderName = notification.fromUserName || "誰か";
+
+      switch (notification.type) {
+        case "cheer":
+          title = "🔥 応援が届きました！";
+          body = `${senderName}さんがあなたのクエストを応援しています！`;
+          break;
+        case "comment":
+          title = "💬 コメントがつきました";
+          body = `${senderName}さんがコメントしました: "${
+            notification.postTextSnippet || ""
+          }"`;
+          break;
+        case "follow": // (もしあれば)
+          title = "新しいフレンド";
+          body = `${senderName}さんとフレンドになりました！`;
+          break;
+        default:
+          break;
+      }
+
+      // 3. FCM経由で送信
+      const message = {
+        token: fcmToken,
+        notification: {
+          title: title,
+          body: body,
+        },
+        data: {
+          // アプリ側で受け取って画面遷移などに使うデータ
+          type: notification.type,
+          postId: notification.postId || "",
+          click_action: "FLUTTER_NOTIFICATION_CLICK",
+        },
+        // iOS固有の設定
+        apns: {
+          payload: {
+            aps: {
+              sound: "default",
+              badge: 1,
+            },
+          },
+        },
+      };
+
+      await admin.messaging().send(message);
+      logger.log(`Successfully sent notification to user ${targetUserId}`);
+    } catch (error) {
+      logger.error("Error sending notification:", error);
+    }
+  }
+);

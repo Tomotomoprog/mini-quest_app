@@ -63,9 +63,10 @@ class UserProfile {
   final String uid;
   final String? displayName;
   final String? photoURL;
-  // ▼▼▼ 2つのフィールドを追加 ▼▼▼
   final String? accountName;
   final String? bio;
+  // ▼▼▼ 追加: キャラクターアバターの画像パス ▼▼▼
+  final String? characterImage;
   // ▲▲▲
   final int xp;
   final UserStats stats;
@@ -81,9 +82,10 @@ class UserProfile {
     required this.uid,
     this.displayName,
     this.photoURL,
-    // ▼▼▼ コンストラクタに追加 ▼▼▼
     this.accountName,
     this.bio,
+    // ▼▼▼ 追加 ▼▼▼
+    this.characterImage,
     // ▲▲▲
     required this.xp,
     required this.stats,
@@ -111,9 +113,10 @@ class UserProfile {
       uid: doc.id,
       displayName: data['displayName'],
       photoURL: data['photoURL'],
-      // ▼▼▼ Firestore から読み込む ▼▼▼
       accountName: data['accountName'],
       bio: data['bio'],
+      // ▼▼▼ 追加 ▼▼▼
+      characterImage: data['characterImage'],
       // ▲▲▲
       xp: data['xp'] ?? 0,
       stats: UserStats.fromMap(data['stats'] ?? {}),

@@ -1,17 +1,15 @@
 // lib/my_quest_post_screen.dart
-
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Required for TextInputFormatter
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'models/my_quest.dart';
-import 'models/user_profile.dart' as model; // モデルのimportにエイリアスを設定
+import 'models/user_profile.dart' as model;
 import 'utils/progression.dart';
 
-// ヘルパー関数（クラス外または共通のユーティリティファイルに追加）
 bool _isSameDate(DateTime date1, DateTime date2) {
   return date1.year == date2.year &&
       date1.month == date2.month &&
@@ -22,30 +20,30 @@ class DecimalTextInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
       TextEditingValue oldValue, TextEditingValue newValue) {
-    // ▼▼▼ 小数点が最初に来るのを防ぎ、小数点が多くても1つだけ許可する正規表現に修正 ▼▼▼
     final regExp = RegExp(r'^\d*\.?\d*$');
-    // ▲▲▲ 小数点が最初に来るのを防ぎ、小数点が多くても1つだけ許可する正規表現に修正 ▲▲▲
     final String newString = newValue.text;
-
     if (regExp.hasMatch(newString)) {
-      // ▼▼▼ 複数の小数点を入力できないようにするチェックを追加 ▼▼▼
       if (newString.contains('.') &&
           newString.indexOf('.') != newString.lastIndexOf('.')) {
         return oldValue;
       }
-      // ▲▲▲ 複数の小数点を入力できないようにするチェックを追加 ▲▲▲
       return newValue;
     }
-    // ▼▼▼ 不正な文字が入力された場合、直前の有効な値に戻すように修正 ▼▼▼
     return oldValue;
-    // ▲▲▲ 不正な文字が入力された場合、直前の有効な値に戻すように修正 ▲▲▲
   }
 }
 
 class MyQuestPostScreen extends StatefulWidget {
-  final MyQuest? initialQuest; // 特定のクエストに紐づける場合に受け取る
+  final MyQuest? initialQuest;
+  // ▼▼▼ 追加: 一言投稿フラグ ▼▼▼
+  final bool isShortPost;
 
-  const MyQuestPostScreen({super.key, this.initialQuest});
+  const MyQuestPostScreen({
+    super.key,
+    this.initialQuest,
+    this.isShortPost = false,
+  });
+  // ▲▲▲
 
   @override
   State<MyQuestPostScreen> createState() => _MyQuestPostScreenState();
@@ -53,19 +51,19 @@ class MyQuestPostScreen extends StatefulWidget {
 
 class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
   final _textController = TextEditingController();
-  final _timeController = TextEditingController(); // 時間入力用コントローラー
+  final _timeController = TextEditingController();
   bool _isLoading = false;
   MyQuest? _selectedMyQuest;
   List<MyQuest> _activeQuests = [];
   File? _imageFile;
-  model.UserProfile? _currentUserProfile; // エイリアスを使用
+  model.UserProfile? _currentUserProfile;
   JobResult? _myJobInfo;
   bool _shareWisdom = false;
 
   @override
   void initState() {
     super.initState();
-    _selectedMyQuest = widget.initialQuest; // 初期クエストを設定
+    _selectedMyQuest = widget.initialQuest;
     _fetchUserData();
   }
 
@@ -88,7 +86,7 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
 
     if (mounted) {
       if (userDoc.exists) {
-        final profile = model.UserProfile.fromFirestore(userDoc); // エイリアスを使用
+        final profile = model.UserProfile.fromFirestore(userDoc);
         final level = computeLevel(profile.xp);
         final jobInfo = computeJob(profile.stats, level);
         setState(() {
@@ -111,6 +109,9 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
   }
 
   void _showMyQuestPicker() {
+    // 一言投稿でクエスト選択を禁止したい場合はここで制御できますが、
+    // 一言投稿でも「やっぱりクエストに紐付けたい」となる可能性もあるため
+    // そのまま選択可能にしておきます。
     if (widget.initialQuest != null) return;
 
     showModalBottomSheet(
@@ -165,20 +166,25 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
     final text = _textController.text.trim();
     final double? timeSpentHours = double.tryParse(_timeController.text.trim());
 
-    if (_selectedMyQuest == null) {
+    // ▼▼▼ 修正: 一言投稿の場合はクエスト選択を必須にしない ▼▼▼
+    if (!widget.isShortPost && _selectedMyQuest == null) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('紐付けるマイクエストを選択してください。')));
       return;
     }
+    // ▲▲▲
+
     if (text.isEmpty && _imageFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('投稿内容を入力するか、写真を選択してください。')));
       return;
     }
-    if (timeSpentHours == null || timeSpentHours <= 0) {
+
+    // 一言投稿なら時間は必須ではない（任意）、通常投稿なら必須
+    if (!widget.isShortPost &&
+        (timeSpentHours == null || timeSpentHours <= 0)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('努力した時間(時間)を正しく入力してください。')),
-      );
+          const SnackBar(content: Text('努力した時間(時間)を正しく入力してください。')));
       return;
     }
 
@@ -187,7 +193,7 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
     try {
       final level = computeLevel(_currentUserProfile!.xp);
       final jobInfo = _myJobInfo!;
-      final questCategory = _selectedMyQuest!.category;
+      final questCategory = _selectedMyQuest?.category; // null許容
 
       String? photoURL;
       if (_imageFile != null) {
@@ -212,12 +218,15 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
         'myQuestId': _selectedMyQuest?.id,
         'myQuestTitle': _selectedMyQuest?.title,
         'questCategory': questCategory,
-        'timeSpentHours': timeSpentHours, // 時間(double)を直接保存
+        'timeSpentHours': timeSpentHours,
         'isBlessed': false,
         'isWisdomShared': _shareWisdom,
+        // ▼▼▼ 追加: 一言投稿フラグを保存 ▼▼▼
+        'isShortPost': widget.isShortPost,
+        // ▲▲▲
       });
 
-      // --- 連続記録更新ロジック (FieldValue.increment を使わない方法) START ---
+      // --- 連続記録更新ロジック ---
       final userRef =
           FirebaseFirestore.instance.collection('users').doc(user.uid);
 
@@ -228,7 +237,6 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
         }
         final currentProfile = model.UserProfile.fromFirestore(userSnapshot);
 
-        // --- Streak Calculation (変更なし) ---
         int currentStreak = currentProfile.currentStreak;
         int longestStreak = currentProfile.longestStreak;
         final DateTime now = DateTime.now();
@@ -240,7 +248,6 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
               lastPostDateTime.month, lastPostDateTime.day);
           final DateTime yesterday = today.subtract(const Duration(days: 1));
           if (_isSameDate(lastPostDay, today)) {
-            /* No change */
           } else if (_isSameDate(lastPostDay, yesterday)) {
             currentStreak++;
           } else {
@@ -252,18 +259,14 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
         if (currentStreak > longestStreak) {
           longestStreak = currentStreak;
         }
-        // --- End Streak Calculation ---
 
-        // --- 手動での加算計算 START ---
-        int newXp = currentProfile.xp + 10; // XPを加算
+        int newXp = currentProfile.xp + 10;
 
-        // totalEffortHours を手動で加算
         double newTotalEffortHours = currentProfile.totalEffortHours;
-        if (timeSpentHours > 0) {
+        if (timeSpentHours != null && timeSpentHours > 0) {
           newTotalEffortHours += timeSpentHours;
         }
 
-        // stats を手動で加算
         Map<String, dynamic> newStats = {
           'Life': currentProfile.stats.life,
           'Study': currentProfile.stats.study,
@@ -273,26 +276,20 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
           'Mental': currentProfile.stats.mental,
         };
         if (questCategory != null && newStats.containsKey(questCategory)) {
-          // Firestoreから読み込んだ値が null の場合のフォールバックを追加
           newStats[questCategory] = (newStats[questCategory] ?? 0) + 1;
         }
-        // --- 手動での加算計算 END ---
 
-        // --- 最終的な更新データを作成 ---
         final updates = <String, dynamic>{
-          'xp': newXp, // 計算後の値をセット
+          'xp': newXp,
           'currentStreak': currentStreak,
           'longestStreak': longestStreak,
           'lastPostDate': Timestamp.fromDate(now),
-          'stats': newStats, // 計算後のMapをセット
-          'totalEffortHours': newTotalEffortHours, // 計算後の値をセット
+          'stats': newStats,
+          'totalEffortHours': newTotalEffortHours,
         };
-        // --- 最終的な更新データを作成 END ---
 
-        // transaction.set(..., SetOptions(merge: true)) の代わりに update を使用
         transaction.update(userRef, updates);
       });
-      // --- 連続記録更新ロジック (FieldValue.increment を使わない方法) END ---
 
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -313,24 +310,27 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_selectedMyQuest != null
-            ? '${_selectedMyQuest!.title} の記録'
-            : 'マイクエストの記録'),
+        title: Text(widget.isShortPost
+            ? '一言投稿'
+            : _selectedMyQuest != null
+                ? '${_selectedMyQuest!.title} の記録'
+                : 'マイクエストの記録'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 100.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // 一言投稿でない場合、または一言投稿でも時間を記録したい場合
             TextField(
               controller: _timeController,
-              decoration: const InputDecoration(
-                labelText: '努力した時間（時間）',
+              decoration: InputDecoration(
+                labelText: widget.isShortPost ? '努力した時間（任意）' : '努力した時間（時間）',
                 hintText: '例: 1.5',
-                border: OutlineInputBorder(
+                border: const OutlineInputBorder(
                   borderRadius: BorderRadius.all(Radius.circular(12)),
                 ),
-                prefixIcon: Icon(Icons.timer_outlined),
+                prefixIcon: const Icon(Icons.timer_outlined),
               ),
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
@@ -348,6 +348,63 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
                 ),
               ),
               maxLines: 5,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  tooltip: '写真を追加',
+                  onPressed: _pickImage,
+                ),
+                const SizedBox(width: 8),
+                // 一言投稿モードなら、クエスト選択は任意なのでデザインを少し変える
+                if (widget.initialQuest == null)
+                  ActionChip(
+                    avatar: Icon(Icons.flag_outlined,
+                        color: _selectedMyQuest != null
+                            ? Theme.of(context).primaryColor
+                            : null,
+                        size: 20),
+                    label: Text(
+                      _selectedMyQuest != null
+                          ? _selectedMyQuest!.title
+                          : (widget.isShortPost ? 'クエスト紐付け(任意)' : 'マイクエストを選択'),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onPressed: _showMyQuestPicker,
+                    backgroundColor: _selectedMyQuest != null
+                        ? Theme.of(context).primaryColor.withOpacity(0.12)
+                        : null,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      side: BorderSide(
+                        color: _selectedMyQuest != null
+                            ? Theme.of(context).primaryColor
+                            : Colors.grey.shade400,
+                        width: 1,
+                      ),
+                    ),
+                  )
+                else if (_selectedMyQuest != null)
+                  Chip(
+                    avatar: Icon(Icons.flag,
+                        color: Theme.of(context).primaryColor, size: 20),
+                    label: Text(
+                      _selectedMyQuest!.title,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    backgroundColor:
+                        Theme.of(context).primaryColor.withOpacity(0.12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      side: BorderSide(
+                        color: Theme.of(context).primaryColor,
+                        width: 1,
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 16),
             if (_imageFile != null)
@@ -389,63 +446,6 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
               icon: const Icon(Icons.send),
               label: const Text('記録する'),
             ),
-      bottomNavigationBar: BottomAppBar(
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.photo_camera_outlined),
-              tooltip: '写真を追加',
-              onPressed: _pickImage,
-            ),
-            const SizedBox(width: 8),
-            if (widget.initialQuest == null)
-              ActionChip(
-                avatar: Icon(Icons.flag_outlined,
-                    color: _selectedMyQuest != null
-                        ? Theme.of(context).primaryColor
-                        : null,
-                    size: 20),
-                label: Text(
-                  _selectedMyQuest != null
-                      ? _selectedMyQuest!.title
-                      : 'マイクエストを選択',
-                  overflow: TextOverflow.ellipsis,
-                ),
-                onPressed: _showMyQuestPicker,
-                backgroundColor: _selectedMyQuest != null
-                    ? Theme.of(context).primaryColor.withOpacity(0.12)
-                    : null,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  side: BorderSide(
-                    color: _selectedMyQuest != null
-                        ? Theme.of(context).primaryColor
-                        : Colors.grey.shade400,
-                    width: 1,
-                  ),
-                ),
-              )
-            else if (_selectedMyQuest != null)
-              Chip(
-                avatar: Icon(Icons.flag,
-                    color: Theme.of(context).primaryColor, size: 20),
-                label: Text(
-                  _selectedMyQuest!.title,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                backgroundColor:
-                    Theme.of(context).primaryColor.withOpacity(0.12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  side: BorderSide(
-                    color: Theme.of(context).primaryColor,
-                    width: 1,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -10,7 +10,7 @@ import 'models/user_profile.dart';
 import 'utils/progression.dart';
 import 'cheer_list_screen.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'widgets/post_content_widget.dart'; // ◀◀◀ 新しい共通ウィジェットをインポート
+import 'widgets/post_content_widget.dart'; // 既存のインポートを確認してください
 
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
@@ -20,9 +20,8 @@ class TimelineScreen extends StatefulWidget {
 }
 
 class _TimelineScreenState extends State<TimelineScreen> {
-  Set<String> _likedPostIds = {}; // (DB構造は変えないので変数名はそのまま)
+  Set<String> _likedPostIds = {};
   UserProfile? _currentUserProfile;
-
   List<String> _friendIds = [];
   bool _isLoadingFriends = true;
 
@@ -41,12 +40,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
     final userDocFuture =
         FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-
     final likesFuture = FirebaseFirestore.instance
-        .collectionGroup('likes') // (DB構造は変えないので 'likes' のまま)
+        .collectionGroup('likes')
         .where('uid', isEqualTo: user.uid)
         .get();
-
     final friendsFuture = FirebaseFirestore.instance
         .collection('friendships')
         .where('userIds', arrayContains: user.uid)
@@ -67,7 +64,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
           _currentUserProfile = profile;
         });
       }
-
       setState(() {
         _likedPostIds = likesSnapshot.docs
             .map((doc) => doc.reference.parent.parent!.id)
@@ -91,37 +87,31 @@ class _TimelineScreenState extends State<TimelineScreen> {
     }
   }
 
-  // ▼▼▼ 通知タイプを 'cheer' に変更 ▼▼▼
   Future<void> _toggleLike(String postId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final postRef = FirebaseFirestore.instance.collection('posts').doc(postId);
-    final likeRef =
-        postRef.collection('likes').doc(user.uid); // (DB構造は 'likes' のまま)
+    final likeRef = postRef.collection('likes').doc(user.uid);
     final isLiked = _likedPostIds.contains(postId);
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
       final postSnapshot = await transaction.get(postRef);
       if (!postSnapshot.exists) return;
-
       final post = Post.fromFirestore(postSnapshot);
       final shouldNotify = !isLiked && post.uid != user.uid;
 
       if (isLiked) {
         transaction.delete(likeRef);
-        transaction.update(postRef,
-            {'likeCount': FieldValue.increment(-1)}); // (DB構造は 'likeCount' のまま)
+        transaction.update(postRef, {'likeCount': FieldValue.increment(-1)});
       } else {
         transaction.set(likeRef,
             {'uid': user.uid, 'createdAt': FieldValue.serverTimestamp()});
-        transaction.update(postRef,
-            {'likeCount': FieldValue.increment(1)}); // (DB構造は 'likeCount' のまま)
-
+        transaction.update(postRef, {'likeCount': FieldValue.increment(1)});
         if (shouldNotify) {
           final notificationRef =
               FirebaseFirestore.instance.collection('notifications').doc();
           transaction.set(notificationRef, {
-            'type': 'cheer', // ◀◀◀ 通知タイプを 'cheer' に変更
+            'type': 'cheer',
             'fromUserId': user.uid,
             'fromUserName': user.displayName ?? '名無しさん',
             'fromUserAvatar': user.photoURL,
@@ -136,7 +126,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
         }
       }
     });
-    // ▲▲▲
 
     setState(() {
       if (isLiked) {
@@ -147,7 +136,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
     });
   }
 
-  // ▼▼▼ 投稿削除のロジックを追加 ▼▼▼
   Future<void> _showDeleteConfirmDialog(String postId, String? photoURL) async {
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -176,16 +164,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
   Future<void> _deletePost(String postId, String? photoURL) async {
     try {
-      // 1. (もしあれば) ストレージの写真を削除
       if (photoURL != null && photoURL.isNotEmpty) {
         await FirebaseStorage.instance.refFromURL(photoURL).delete();
       }
-
-      // 2. 投稿ドキュメントを削除
-      // (注: サブコレクション 'likes' や 'comments'、関連する 'notifications' はこれでは消えません)
-      // (本番環境では Cloud Function で関連データを削除するのが望ましい)
       await FirebaseFirestore.instance.collection('posts').doc(postId).delete();
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('投稿を削除しました')),
@@ -200,6 +182,90 @@ class _TimelineScreenState extends State<TimelineScreen> {
       }
     }
   }
+
+  // ▼▼▼ タブの中身を生成するヘルパーメソッド ▼▼▼
+  Widget _buildTimeline(BuildContext context,
+      {required bool showShortPostsOnly}) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId == null) return const SizedBox.shrink();
+
+    final Set<String> feedUserIdsSet = {currentUserId, ..._friendIds};
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('posts')
+          .orderBy('createdAt', descending: true)
+          .limit(100)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return const Center(child: Text('投稿の取得に失敗しました'));
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Center(child: Text('まだ投稿がありません。'));
+        }
+
+        // 全投稿をリスト化
+        final allPosts =
+            snapshot.data!.docs.map((doc) => Post.fromFirestore(doc)).toList();
+
+        // フィルタリング（フレンド かつ タブに応じた種類）
+        final posts = allPosts.where((post) {
+          // 1. フレンドかどうか
+          if (!feedUserIdsSet.contains(post.uid)) return false;
+
+          // 2. タブのフィルタ
+          if (showShortPostsOnly) {
+            // 「一言」タブ: isShortPost が true のものだけ
+            return post.isShortPost;
+          } else {
+            // 「メイン」タブ: isShortPost が false (またはnull) のものだけ
+            // ※ nullは false 扱いになっているはずですが念のため
+            return !post.isShortPost;
+          }
+        }).toList();
+
+        if (posts.isEmpty) {
+          return Center(
+            child: Text(showShortPostsOnly ? '一言投稿はまだありません' : '投稿はまだありません'),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+          itemCount: posts.length,
+          itemBuilder: (context, index) {
+            final post = posts[index];
+            return Card(
+              elevation: 2,
+              margin: const EdgeInsets.symmetric(vertical: 8.0),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _PostHeader(post: post),
+                  PostContentWidget(post: post),
+                  _PostActions(
+                    post: post,
+                    isLiked: _likedPostIds.contains(post.id),
+                    isMyPost: post.uid == _currentUserProfile?.uid,
+                    onLike: () => _toggleLike(post.id),
+                    onDelete: () =>
+                        _showDeleteConfirmDialog(post.id, post.photoURL),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
   // ▲▲▲
 
   @override
@@ -210,83 +276,35 @@ class _TimelineScreenState extends State<TimelineScreen> {
         _currentUserProfile == null ||
         currentUserId == null) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('MiniQuest'),
-        ),
+        appBar: AppBar(title: const Text('MiniQuest')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
-    final Set<String> feedUserIdsSet = {currentUserId, ..._friendIds};
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('MiniQuest'),
-      ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('posts')
-            .orderBy('createdAt', descending: true)
-            .limit(100)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            print("タイムライン エラー: ${snapshot.error}");
-            return const Center(child: Text('投稿の取得に失敗しました'));
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('まだ投稿がありません。'));
-          }
-
-          final allPosts = snapshot.data!.docs
-              .map((doc) => Post.fromFirestore(doc))
-              .toList();
-
-          final posts = allPosts.where((post) {
-            return feedUserIdsSet.contains(post.uid);
-          }).toList();
-
-          if (posts.isEmpty) {
-            return const Center(child: Text('フレンドの投稿はまだありません。'));
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-            itemCount: posts.length,
-            itemBuilder: (context, index) {
-              final post = posts[index];
-              return Card(
-                elevation: 2,
-                margin: const EdgeInsets.symmetric(vertical: 8.0),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _PostHeader(post: post),
-                    // ▼▼▼ 共通ウィジェットを使用 ▼▼▼
-                    PostContentWidget(post: post),
-                    // ▲▲▲ 共通ウィジェットを使用 ▲▲▲
-                    _PostActions(
-                      post: post,
-                      isLiked: _likedPostIds.contains(post.id), // (変数名はそのまま)
-                      isMyPost: post.uid == _currentUserProfile?.uid,
-                      onLike: () => _toggleLike(post.id), // (関数名はそのまま)
-                      onDelete: () => _showDeleteConfirmDialog(
-                          post.id, post.photoURL), // ◀◀◀ 削除コールバックを渡す
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
+    // ▼▼▼ DefaultTabController でラップしてタブを実装 ▼▼▼
+    return DefaultTabController(
+      length: 2, // タブの数
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('MiniQuest'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'メイン'),
+              Tab(text: '一言'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            // タブ1: メイン（通常投稿）
+            _buildTimeline(context, showShortPostsOnly: false),
+            // タブ2: 一言（ショート投稿）
+            _buildTimeline(context, showShortPostsOnly: true),
+          ],
+        ),
       ),
     );
+    // ▲▲▲
   }
 }
 
@@ -346,31 +364,24 @@ class _PostHeader extends StatelessWidget {
   }
 }
 
-// ▼▼▼ _PostContent ウィジェットは削除 (共通ウィジェットに移動したため) ▼▼▼
-// class _PostContent extends ... { ... }
-// ▲▲▲ _PostContent ウィジェットは削除 ▲▲▲
-
-// ▼▼▼ _PostActions ウィジェットを修正 (UI + 削除コールバック) ▼▼▼
 class _PostActions extends StatelessWidget {
   final Post post;
   final bool isLiked;
   final bool isMyPost;
   final VoidCallback onLike;
-  final VoidCallback onDelete; // ◀◀◀ 削除コールバックを追加
+  final VoidCallback onDelete;
 
   const _PostActions({
     required this.post,
     required this.isLiked,
     required this.isMyPost,
     required this.onLike,
-    required this.onDelete, // ◀◀◀ 削除コールバックを追加
+    required this.onDelete,
   });
 
   void _showLikeList(BuildContext context) {
-    // (DB構造は 'likeCount' のまま)
     if (post.likeCount > 0) {
       Navigator.of(context).push(MaterialPageRoute(
-        // ▼▼▼ CheerListScreen に変更 ▼▼▼
         builder: (context) => CheerListScreen(postId: post.id),
       ));
     }
@@ -386,11 +397,10 @@ class _PostActions extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            // ▼▼▼ アイコンを応援 (炎) に変更 ▼▼▼
             icon: Icon(
                 isLiked
-                    ? Icons.local_fire_department // 押されている
-                    : Icons.local_fire_department_outlined, // 押されていない
+                    ? Icons.local_fire_department
+                    : Icons.local_fire_department_outlined,
                 color: isLiked ? accentColor : iconColor),
             onPressed: onLike,
           ),
@@ -400,7 +410,6 @@ class _PostActions extends StatelessWidget {
             child: Padding(
               padding:
                   const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
-              // ▼▼▼ post.likeCount を参照 (DB構造はそのまま) ▼▼▼
               child: Text(post.likeCount.toString(),
                   style: TextStyle(color: iconColor)),
             ),
@@ -413,14 +422,12 @@ class _PostActions extends StatelessWidget {
           ),
           Text(post.commentCount.toString(),
               style: TextStyle(color: iconColor)),
-          // ▼▼▼ 削除メニューボタンを追加 ▼▼▼
           if (isMyPost)
             IconButton(
               icon: Icon(Icons.more_vert, color: iconColor),
               onPressed: onDelete,
               tooltip: 'オプション',
             ),
-          // ▲▲▲
           const Spacer(),
           Text(
             DateFormat('M/d HH:mm').format(post.createdAt.toDate()),

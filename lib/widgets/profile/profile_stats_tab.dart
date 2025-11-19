@@ -3,14 +3,15 @@ import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-
-// ▼▼▼ [修正] import文を相対パスに変更 ▼▼▼
 import '../../models/user_profile.dart';
 import '../../profile_friends_list_screen.dart';
 import '../../utils/progression.dart';
-// ▲▲▲
+import 'dart:math' as math;
+import 'hex_stats_chart.dart';
+import '../../effort_history_screen.dart';
+import '../../streak_calendar_screen.dart';
+import '../../level_detail_screen.dart'; // ◀◀◀ 追加: レベル詳細画面をインポート
 
-// ▼▼▼ [修正] 元の StatelessWiget に戻し、正しいコンストラクタを定義 ▼▼▼
 class ProfileStatsTab extends StatelessWidget {
   final UserProfile userProfile;
   final int level;
@@ -26,18 +27,24 @@ class ProfileStatsTab extends StatelessWidget {
     required this.isMyProfile,
     required this.onEditPicture,
   });
-// ▲▲▲
 
   static const categoryColors = {
-    'Life': Color(0xFF4ADE80), // green[400]
-    'Study': Color(0xFF60A5FA), // blue[400]
-    'Physical': Color(0xFFF87171), // red[400]
-    'Social': Color(0xFFF472B6), // pink[400]
-    'Creative': Color(0xFFC084FC), // purple[400]
-    'Mental': Color(0xFF818CF8), // indigo[400]
+    'Life': Color(0xFF4ADE80),
+    'Study': Color(0xFF60A5FA),
+    'Physical': Color(0xFFF87171),
+    'Social': Color(0xFFF472B6),
+    'Creative': Color(0xFFC084FC),
+    'Mental': Color(0xFF818CF8),
   };
 
-  // ▼▼▼ プロフィール編集ダイアログ（bio対応） ▼▼▼
+  static const List<String> _availableAvatars = [
+    'lib/assets/images/avatar/minarai_boy.jpg',
+    'lib/assets/images/avatar/minnarai_girl.jpg',
+  ];
+
+  static const String _defaultAvatar =
+      'lib/assets/images/avatar/minarai_boy.jpg';
+
   void _showEditProfileDialog(BuildContext context, UserProfile userProfile) {
     final nameController = TextEditingController(text: userProfile.displayName);
     final bioController = TextEditingController(text: userProfile.bio);
@@ -101,10 +108,7 @@ class ProfileStatsTab extends StatelessWidget {
                   final newBio = bioController.text.trim();
 
                   try {
-                    // Auth の表示名も更新
                     await user.updateDisplayName(newName);
-
-                    // Firestore を更新
                     await FirebaseFirestore.instance
                         .collection('users')
                         .doc(user.uid)
@@ -134,11 +138,102 @@ class ProfileStatsTab extends StatelessWidget {
       },
     );
   }
-  // ▲▲▲
+
+  void _showAvatarSelectionDialog(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          height: 300,
+          child: Column(
+            children: [
+              Text(
+                'アバターを選択',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 24),
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: _availableAvatars.map((path) {
+                    final isSelected =
+                        (userProfile.characterImage ?? _defaultAvatar) == path;
+                    return GestureDetector(
+                      onTap: () => _updateCharacterImage(context, path),
+                      child: Column(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              border: isSelected
+                                  ? Border.all(
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                      width: 3)
+                                  : null,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.asset(
+                                path,
+                                width: 100,
+                                height: 100,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return const Icon(Icons.error, size: 50);
+                                },
+                              ),
+                            ),
+                          ),
+                          if (isSelected)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8.0),
+                              child: Icon(Icons.check_circle,
+                                  color: Colors.green, size: 24),
+                            ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _updateCharacterImage(BuildContext context, String path) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+        'characterImage': path,
+      });
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('アバターを変更しました')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('変更に失敗しました: $e')),
+        );
+      }
+    }
+  }
 
   Widget _buildAvatarWidget(BuildContext context) {
     const double avatarRadius = 45;
-
     Widget avatarContent;
     if (userProfile.photoURL != null && userProfile.photoURL!.isNotEmpty) {
       avatarContent = CircleAvatar(
@@ -157,7 +252,6 @@ class ProfileStatsTab extends StatelessWidget {
         child: Icon(Icons.person, size: avatarRadius, color: Colors.grey[400]),
       );
     }
-
     return Stack(
       alignment: Alignment.bottomRight,
       children: [
@@ -168,7 +262,7 @@ class ProfileStatsTab extends StatelessWidget {
               BoxShadow(
                 color: Colors.black.withOpacity(0.5),
                 blurRadius: 10,
-                offset: Offset(0, 4),
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -180,12 +274,12 @@ class ProfileStatsTab extends StatelessWidget {
             bottom: 0,
             child: Material(
               color: Theme.of(context).colorScheme.primary,
-              shape:
-                  CircleBorder(side: BorderSide(color: Colors.black, width: 2)),
+              shape: const CircleBorder(
+                  side: BorderSide(color: Colors.black, width: 2)),
               elevation: 3.0,
               child: InkWell(
                 onTap: onEditPicture,
-                customBorder: CircleBorder(),
+                customBorder: const CircleBorder(),
                 child: const Padding(
                   padding: EdgeInsets.all(6.0),
                   child: Icon(Icons.edit, color: Colors.white, size: 16),
@@ -203,18 +297,15 @@ class ProfileStatsTab extends StatelessWidget {
     required String label,
     required String value,
     required Color iconColor,
+    VoidCallback? onTap,
   }) {
     final Color textColor = Colors.white;
     final Color labelColor = Colors.grey[400]!;
 
-    return Row(
+    Widget content = Row(
       mainAxisAlignment: MainAxisAlignment.start,
       children: [
-        Icon(
-          icon,
-          color: iconColor,
-          size: 24,
-        ),
+        Icon(icon, color: iconColor, size: 24),
         const SizedBox(width: 8),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -232,6 +323,22 @@ class ProfileStatsTab extends StatelessWidget {
         ),
       ],
     );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(4.0),
+          child: content,
+        ),
+      );
+    } else {
+      return Padding(
+        padding: const EdgeInsets.all(4.0),
+        child: content,
+      );
+    }
   }
 
   Widget _buildPanelRow({
@@ -244,6 +351,8 @@ class ProfileStatsTab extends StatelessWidget {
     required String label2,
     required String value2,
     required Color iconColor2,
+    VoidCallback? onTap1,
+    VoidCallback? onTap2,
   }) {
     return Row(
       children: [
@@ -254,9 +363,10 @@ class ProfileStatsTab extends StatelessWidget {
             label: label1,
             value: value1,
             iconColor: iconColor1,
+            onTap: onTap1,
           ),
         ),
-        SizedBox(width: 16),
+        const SizedBox(width: 16),
         Expanded(
           child: _buildSingleStatItem(
             context: context,
@@ -264,6 +374,7 @@ class ProfileStatsTab extends StatelessWidget {
             label: label2,
             value: value2,
             iconColor: iconColor2,
+            onTap: onTap2,
           ),
         ),
       ],
@@ -277,6 +388,17 @@ class ProfileStatsTab extends StatelessWidget {
     return '${totalHours.toStringAsFixed(1)}h';
   }
 
+  List<String> _getTitles(UserProfile profile) {
+    final List<String> titles = [];
+    if (profile.accountName == 'tomo_developer') {
+      titles.add('開発者');
+    }
+    if (profile.accountName != null && profile.accountName!.isNotEmpty) {
+      titles.add('開発協力者');
+    }
+    return titles;
+  }
+
   @override
   Widget build(BuildContext context) {
     final Color panelColor = Colors.grey[900]!;
@@ -284,20 +406,44 @@ class ProfileStatsTab extends StatelessWidget {
     final Color accentColor = Theme.of(context).colorScheme.primary;
 
     final List<Color> iconColors = [
-      accentColor.withOpacity(0.9), // Level
-      accentColor.withOpacity(0.9), // Job
-      accentColor.withOpacity(0.8), // Streak
-      accentColor.withOpacity(0.8), // Effort
-      accentColor.withOpacity(0.7), // Records
-      accentColor.withOpacity(0.7), // Friends
+      accentColor.withOpacity(0.9),
+      accentColor.withOpacity(0.9),
+      accentColor.withOpacity(0.8),
+      accentColor.withOpacity(0.8),
+      accentColor.withOpacity(0.7),
+      accentColor.withOpacity(0.7),
     ];
+
+    final stats = userProfile.stats;
+    final int highestValue = [
+      stats.life,
+      stats.study,
+      stats.physical,
+      stats.social,
+      stats.creative,
+      stats.mental
+    ].isNotEmpty
+        ? [
+            stats.life,
+            stats.study,
+            stats.physical,
+            stats.social,
+            stats.creative,
+            stats.mental
+          ].reduce(math.max)
+        : 0;
+    final int dynamicMax = (highestValue / 10.0).ceil() * 10;
+    final int currentMax = math.max(10, dynamicMax);
+    final List<String> userTitles = _getTitles(userProfile);
+    final String displayAvatarPath =
+        userProfile.characterImage ?? _defaultAvatar;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ▼▼▼ 名前・アカウント名・自己紹介・編集ボタン ▼▼▼
+          // --- ヘッダー ---
           Padding(
             padding:
                 const EdgeInsets.symmetric(horizontal: 0.0, vertical: 20.0),
@@ -313,7 +459,6 @@ class ProfileStatsTab extends StatelessWidget {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          // 名前
                           Expanded(
                             child: Text(
                               userProfile.displayName ?? '名無しさん',
@@ -324,7 +469,6 @@ class ProfileStatsTab extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          // 編集ボタン (自分のプロフのみ)
                           if (isMyProfile)
                             IconButton(
                               icon: Icon(Icons.edit_outlined,
@@ -334,7 +478,6 @@ class ProfileStatsTab extends StatelessWidget {
                             ),
                         ],
                       ),
-                      // ▼▼▼ アカウント名を追加 ▼▼▼
                       if (userProfile.accountName != null)
                         Text(
                           '@${userProfile.accountName}',
@@ -343,8 +486,6 @@ class ProfileStatsTab extends StatelessWidget {
                                     color: Colors.grey[400],
                                   ),
                         ),
-                      // ▲▲▲
-                      // ▼▼▼ 自己紹介欄を追加 ▼▼▼
                       const SizedBox(height: 8),
                       Text(
                         userProfile.bio ??
@@ -359,15 +500,24 @@ class ProfileStatsTab extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      // ▲▲▲
+                      if (userTitles.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8.0,
+                          runSpacing: 4.0,
+                          children: userTitles
+                              .map((title) => _TitleChip(title: title))
+                              .toList(),
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ],
             ),
           ),
-          // ▲▲▲
 
+          // --- ステータスパネル ---
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 0.0),
             child: Container(
@@ -381,24 +531,34 @@ class ProfileStatsTab extends StatelessWidget {
                     color: Colors.black.withOpacity(0.4),
                     blurRadius: 15,
                     spreadRadius: 0,
-                    offset: Offset(0, 5),
+                    offset: const Offset(0, 5),
                   ),
                 ],
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // ▼▼▼ 修正: レベル部分に onTap1 を追加して遷移を設定 ▼▼▼
                   _buildPanelRow(
                     context: context,
                     icon1: Icons.star_border_purple500_outlined,
                     label1: 'レベル',
                     value1: level.toString(),
                     iconColor1: iconColors[0],
+                    onTap1: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              LevelDetailScreen(currentXp: userProfile.xp),
+                        ),
+                      );
+                    },
                     icon2: Icons.work_outline,
                     label2: 'ジョブ',
                     value2: jobInfo.title,
                     iconColor2: iconColors[1],
                   ),
+                  // ▲▲▲
                   Divider(
                       color: Colors.white.withOpacity(0.1),
                       height: 24,
@@ -409,10 +569,24 @@ class ProfileStatsTab extends StatelessWidget {
                     label1: '連続記録',
                     value1: '${userProfile.currentStreak} 日',
                     iconColor1: iconColors[2],
+                    onTap1: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const StreakCalendarScreen(),
+                        ),
+                      );
+                    },
                     icon2: Icons.timer_outlined,
                     label2: '総努力時間',
                     value2: _formatDuration(userProfile.totalEffortHours),
                     iconColor2: iconColors[3],
+                    onTap2: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const EffortHistoryScreen(),
+                        ),
+                      );
+                    },
                   ),
                   Divider(
                       color: Colors.white.withOpacity(0.1),
@@ -445,7 +619,7 @@ class ProfileStatsTab extends StatelessWidget {
                           },
                         ),
                       ),
-                      SizedBox(width: 16),
+                      const SizedBox(width: 16),
                       Expanded(
                         child: StreamBuilder<QuerySnapshot>(
                           stream: FirebaseFirestore.instance
@@ -455,28 +629,27 @@ class ProfileStatsTab extends StatelessWidget {
                               .snapshots(),
                           builder: (context, snapshot) {
                             final friendCount = snapshot.data?.docs.length ?? 0;
-                            return InkWell(
-                              onTap: friendCount > 0
-                                  ? () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              ProfileFriendsListScreen(
-                                            userId: userProfile.uid,
-                                            userName: userProfile.displayName ??
-                                                '名無しさん',
+                            return _buildSingleStatItem(
+                                context: context,
+                                icon: Icons.people_alt_outlined,
+                                label: 'フレンド',
+                                value: friendCount.toString(),
+                                iconColor: iconColors[5],
+                                onTap: friendCount > 0
+                                    ? () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                ProfileFriendsListScreen(
+                                              userId: userProfile.uid,
+                                              userName:
+                                                  userProfile.displayName ??
+                                                      '名無しさん',
+                                            ),
                                           ),
-                                        ),
-                                      );
-                                    }
-                                  : null,
-                              child: _buildSingleStatItem(
-                                  context: context,
-                                  icon: Icons.people_alt_outlined,
-                                  label: 'フレンド',
-                                  value: friendCount.toString(),
-                                  iconColor: iconColors[5]),
-                            );
+                                        );
+                                      }
+                                    : null);
                           },
                         ),
                       ),
@@ -486,50 +659,15 @@ class ProfileStatsTab extends StatelessWidget {
               ),
             ),
           ),
+
           const SizedBox(height: 24),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  _ProgressBar(
-                      label: 'Life',
-                      value: userProfile.stats.life,
-                      max: 10,
-                      color: categoryColors['Life']!),
-                  const SizedBox(height: 16),
-                  _ProgressBar(
-                      label: 'Study',
-                      value: userProfile.stats.study,
-                      max: 10,
-                      color: categoryColors['Study']!),
-                  const SizedBox(height: 16),
-                  _ProgressBar(
-                      label: 'Physical',
-                      value: userProfile.stats.physical,
-                      max: 10,
-                      color: categoryColors['Physical']!),
-                  const SizedBox(height: 16),
-                  _ProgressBar(
-                      label: 'Social',
-                      value: userProfile.stats.social,
-                      max: 10,
-                      color: categoryColors['Social']!),
-                  const SizedBox(height: 16),
-                  _ProgressBar(
-                      label: 'Creative',
-                      value: userProfile.stats.creative,
-                      max: 10,
-                      color: categoryColors['Creative']!),
-                  const SizedBox(height: 16),
-                  _ProgressBar(
-                      label: 'Mental',
-                      value: userProfile.stats.mental,
-                      max: 10,
-                      color: categoryColors['Mental']!),
-                ],
-              ),
-            ),
+          HexStatsChart(
+            stats: userProfile.stats,
+            max: currentMax,
+            colors: categoryColors,
+            avatarPath: displayAvatarPath,
+            onAvatarTap:
+                isMyProfile ? () => _showAvatarSelectionDialog(context) : null,
           ),
         ],
       ),
@@ -537,37 +675,48 @@ class ProfileStatsTab extends StatelessWidget {
   }
 }
 
-class _ProgressBar extends StatelessWidget {
-  final String label;
-  final int value;
-  final int max;
-  final Color color;
-  const _ProgressBar(
-      {required this.label,
-      required this.value,
-      required this.max,
-      required this.color});
+class _TitleChip extends StatelessWidget {
+  final String title;
+  const _TitleChip({required this.title});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text('$value / $max', style: TextStyle(color: Colors.grey[400])),
-          ],
+    Color color;
+    IconData icon;
+
+    switch (title) {
+      case '開発者':
+        color = Colors.amber.shade600;
+        icon = Icons.code_rounded;
+        break;
+      case '開発協力者':
+        color = Colors.cyan.shade400;
+        icon = Icons.group_work_outlined;
+        break;
+      case '古参冒険者':
+        color = Colors.deepOrange.shade400;
+        icon = Icons.shield_outlined;
+        break;
+      default:
+        color = Colors.grey.shade400;
+        icon = Icons.bookmark_border_rounded;
+    }
+
+    return Chip(
+      avatar: Icon(icon, color: color, size: 16),
+      label: Text(
+        title,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
         ),
-        const SizedBox(height: 4),
-        LinearProgressIndicator(
-          value: value / max,
-          minHeight: 8,
-          borderRadius: BorderRadius.circular(4),
-          backgroundColor: color.withOpacity(0.2),
-          valueColor: AlwaysStoppedAnimation<Color>(color),
-        ),
-      ],
+      ),
+      backgroundColor: color.withOpacity(0.25),
+      side: BorderSide(color: color.withOpacity(0.5)),
+      padding: const EdgeInsets.symmetric(horizontal: 6.0),
+      labelPadding: const EdgeInsets.symmetric(horizontal: 4.0),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 }

@@ -1,3 +1,4 @@
+// lib/models/post.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Post {
@@ -19,9 +20,10 @@ class Post {
   final String? questCategory;
   final bool isBlessed;
   final bool isWisdomShared;
-  // ▼▼▼ フィールド名と型を変更 ▼▼▼
   final double? timeSpentHours;
-  // ▲▲▲ フィールド名と型を変更 ▲▲▲
+  // ▼▼▼ 追加 ▼▼▼
+  final bool isShortPost;
+  // ▲▲▲
 
   Post({
     required this.id,
@@ -42,14 +44,15 @@ class Post {
     this.questCategory,
     required this.isBlessed,
     required this.isWisdomShared,
-    // ▼▼▼ コンストラクタを修正 ▼▼▼
     this.timeSpentHours,
-    // ▲▲▲ コンストラクタを修正 ▲▲▲
+    // ▼▼▼ 追加 ▼▼▼
+    this.isShortPost = false,
+    // ▲▲▲
   });
 
   factory Post.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-    // ▼▼▼ timeSpentHours の読み込みを追加 (int から double へのキャストも考慮) ▼▼▼
+
     double? hours;
     if (data['timeSpentHours'] != null) {
       if (data['timeSpentHours'] is int) {
@@ -58,7 +61,6 @@ class Post {
         hours = data['timeSpentHours'] as double;
       }
     }
-    // ▲▲▲ timeSpentHours の読み込みを追加 ▲▲▲
 
     return Post(
       id: doc.id,
@@ -79,9 +81,10 @@ class Post {
       questCategory: data['questCategory'],
       isBlessed: data['isBlessed'] ?? false,
       isWisdomShared: data['isWisdomShared'] ?? false,
-      // ▼▼▼ 修正した hours 変数を使用 ▼▼▼
       timeSpentHours: hours,
-      // ▲▲▲ 修正した hours 変数を使用 ▲▲▲
+      // ▼▼▼ 追加 (デフォルトは false) ▼▼▼
+      isShortPost: data['isShortPost'] ?? false,
+      // ▲▲▲
     );
   }
 }

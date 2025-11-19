@@ -1,10 +1,10 @@
 name: miniquest_app
 description: "A new Flutter project."
-publish_to: 'none'
+publish_to: "none"
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.5.5 <4.0.0'
+  sdk: ">=3.5.5 <4.0.0"
 
 dependencies:
   flutter:
@@ -15,7 +15,11 @@ dependencies:
   cloud_firestore: ^5.2.0
   firebase_auth: ^5.2.0
   google_sign_in: ^6.2.1
-
+  firebase_messaging: ^15.1.3
+  flutter_local_notifications: ^17.2.2
+  timezone: ^0.9.4
+  fl_chart: ^0.69.0
+  table_calendar: ^3.1.2
 
   cupertino_icons: ^1.0.6
   intl: ^0.20.2
@@ -33,6 +37,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - lib/assets/images/avatar/
 
 flutter_launcher_icons:
   android: true

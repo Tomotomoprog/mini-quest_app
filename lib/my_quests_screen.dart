@@ -6,7 +6,6 @@ import 'models/my_quest.dart';
 import 'create_my_quest_screen.dart';
 import 'my_quest_detail_screen.dart';
 import 'my_quest_post_screen.dart';
-import 'completed_quests_screen.dart';
 
 class MyQuestsScreen extends StatelessWidget {
   const MyQuestsScreen({super.key});
@@ -79,133 +78,123 @@ class MyQuestsScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ▼▼▼ 3つのアクションボタン（コンパクト版） ▼▼▼
+            // ▼▼▼ 2つのアクションボタン ▼▼▼
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              child: Column(
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _ActionButton(
-                          icon: Icons.add,
-                          label: '新規作成',
-                          color: primaryAccent,
-                          onTap: () {
-                            Navigator.of(context).push(MaterialPageRoute(
-                              builder: (context) => const CreateMyQuestScreen(),
-                            ));
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _ActionButton(
-                          icon: Icons.edit_note,
-                          label: '進捗を記録',
-                          color: Colors.blue,
-                          onTap: () {
-                            Navigator.of(context).push(MaterialPageRoute(
-                              builder: (context) => const MyQuestPostScreen(),
-                            ));
-                          },
-                        ),
-                      ),
-                    ],
+                  Expanded(
+                    child: _ActionButton(
+                      icon: Icons.add,
+                      label: '新規作成',
+                      color: primaryAccent,
+                      onTap: () {
+                        Navigator.of(context).push(MaterialPageRoute(
+                          builder: (context) => const CreateMyQuestScreen(),
+                        ));
+                      },
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  _ActionButton(
-                    icon: Icons.check_circle_outline,
-                    label: '達成済みのクエスト',
-                    color: Colors.green,
-                    onTap: () {
-                      Navigator.of(context).push(MaterialPageRoute(
-                        builder: (context) => const CompletedQuestsScreen(),
-                      ));
-                    },
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _ActionButton(
+                      icon: Icons.edit_note,
+                      label: '進捗を記録',
+                      color: Colors.blue,
+                      onTap: () {
+                        Navigator.of(context).push(MaterialPageRoute(
+                          builder: (context) => const MyQuestPostScreen(),
+                        ));
+                      },
+                    ),
                   ),
                 ],
               ),
             ),
             // ▲▲▲
 
+            // ▼▼▼ 「今日頑張ったことを一言で！」ボタン ▼▼▼
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8), // ボタンとの間隔を調整
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: _ActionButton(
+                icon: Icons.campaign,
+                label: '今日頑張ったことを一言で！',
+                color: Colors.orange,
+                onTap: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (context) =>
+                        const MyQuestPostScreen(isShortPost: true),
+                  ));
+                },
+              ),
+            ),
+            // ▲▲▲
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
               child: Text(
-                '挑戦中のクエスト',
+                'マイクエスト一覧', // ◀◀◀ タイトルを変更しました
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
               ),
             ),
 
-            // ▼▼▼ 挑戦中のクエスト一覧 (カテゴリ分類) ▼▼▼
+            // ▼▼▼ クエスト一覧 (全ステータス取得) ▼▼▼
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('my_quests')
                   .where('uid', isEqualTo: user.uid)
-                  .where('status', isEqualTo: 'active') // 挑戦中のもののみ
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                if (snapshot.hasError) {
-                  return const Center(child: Text('エラーが発生しました'));
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32.0),
-                      child: Column(
-                        children: [
-                          Icon(Icons.flag_outlined,
-                              size: 60, color: secondaryTextColor),
-                          const SizedBox(height: 16),
-                          Text(
-                            '挑戦中のクエストはありません',
-                            style: Theme.of(context).textTheme.titleMedium,
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
+                // データがなくてもエラーではないので、空のリストとして処理を進める
+                // if (!snapshot.hasData) ... のエラー表示は削除し、下流で空状態を処理
 
-                // クエストをカテゴリごとに分類
-                final Map<String, List<MyQuest>> groupedQuests = {};
+                final Map<String, List<MyQuest>> activeQuestsMap = {};
+                final Map<String, List<MyQuest>> completedQuestsMap = {};
+
                 for (var category in categoryOrder) {
-                  groupedQuests[category] = [];
+                  activeQuestsMap[category] = [];
+                  completedQuestsMap[category] = [];
                 }
 
-                for (var doc in snapshot.data!.docs) {
-                  final quest = MyQuest.fromFirestore(doc);
-                  if (groupedQuests.containsKey(quest.category)) {
-                    groupedQuests[quest.category]!.add(quest);
+                if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
+                  for (var doc in snapshot.data!.docs) {
+                    final quest = MyQuest.fromFirestore(doc);
+
+                    if (!activeQuestsMap.containsKey(quest.category)) continue;
+
+                    if (quest.status == 'completed') {
+                      completedQuestsMap[quest.category]!.add(quest);
+                    } else if (quest.status == 'active') {
+                      activeQuestsMap[quest.category]!.add(quest);
+                    }
                   }
                 }
 
-                // カテゴリカードのリストを作成
                 return Column(
                   children: categoryOrder.map((category) {
-                    final questsInCategory = groupedQuests[category]!;
-                    if (questsInCategory.isEmpty) {
-                      return const SizedBox.shrink(); // クエストがなければ何も表示しない
-                    }
-                    // カテゴリごとのカードを返す
-                    return _CategoryQuestCard(
+                    final activeList = activeQuestsMap[category]!;
+                    final completedList = completedQuestsMap[category]!;
+
+                    // ▼▼▼ 修正: クエストが空でもカードを表示する ▼▼▼
+                    return _CategoryExpansionCard(
                       categoryName: category,
-                      quests: questsInCategory,
+                      activeQuests: activeList,
+                      completedQuests: completedList,
                       icon: _getIconForCategory(category),
                       color: _getColorForCategory(category),
                     );
+                    // ▲▲▲
                   }).toList(),
                 );
               },
             ),
-            const SizedBox(height: 20), // スクロール領域の確保
+            const SizedBox(height: 80),
           ],
         ),
       ),
@@ -213,7 +202,7 @@ class MyQuestsScreen extends StatelessWidget {
   }
 }
 
-// ▼▼▼ [修正] アクションボタン用のウィジェット（コンパクト版） ▼▼▼
+// アクションボタン
 class _ActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -232,11 +221,10 @@ class _ActionButton extends StatelessWidget {
     return Card(
       elevation: 0,
       clipBehavior: Clip.antiAlias,
-      // カード自体の背景色を少し明るく
       color: Colors.grey[850],
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey[800]!), // 枠線
+        side: BorderSide(color: Colors.grey[800]!),
       ),
       child: InkWell(
         onTap: onTap,
@@ -245,17 +233,16 @@ class _ActionButton extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 20, color: color), // アイコン
+              Icon(icon, size: 20, color: color),
               const SizedBox(width: 10),
-              // テキストがはみ出ないように Expanded で囲む
               Expanded(
                 child: Text(
                   label,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
-                    fontSize: 14, // 文字を少し小さく
+                    fontSize: 14,
                   ),
-                  overflow: TextOverflow.ellipsis, // はみ出たら...
+                  overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
               ),
@@ -266,23 +253,23 @@ class _ActionButton extends StatelessWidget {
     );
   }
 }
-// ▲▲▲
 
-// ▼▼▼ [修正] カテゴリごとのクエストをまとめるカード ▼▼▼
-class _CategoryQuestCard extends StatelessWidget {
+// ▼▼▼ カテゴリごとの折りたたみ式カード ▼▼▼
+class _CategoryExpansionCard extends StatelessWidget {
   final String categoryName;
-  final List<MyQuest> quests;
+  final List<MyQuest> activeQuests;
+  final List<MyQuest> completedQuests;
   final IconData icon;
   final Color color;
 
-  const _CategoryQuestCard({
+  const _CategoryExpansionCard({
     required this.categoryName,
-    required this.quests,
+    required this.activeQuests,
+    required this.completedQuests,
     required this.icon,
     required this.color,
   });
 
-  // ▼▼▼ 応援数を集計するウィジェットを新設 ▼▼▼
   Widget _buildTotalCheerCount(String myQuestId) {
     return FutureBuilder<QuerySnapshot>(
       future: FirebaseFirestore.instance
@@ -296,21 +283,18 @@ class _CategoryQuestCard extends StatelessWidget {
               height: 12,
               child: CircularProgressIndicator(strokeWidth: 2));
         }
-        if (snapshot.hasError) {
-          return const Icon(Icons.error_outline, color: Colors.red, size: 16);
-        }
-
         int totalCheers = 0;
-        for (var doc in snapshot.data!.docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          final likeCount = data['likeCount'] as num? ?? 0; // num として取得
-          totalCheers += likeCount.toInt(); // .toInt() で int に変換
+        if (snapshot.data != null) {
+          for (var doc in snapshot.data!.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final likeCount = data['likeCount'] as num? ?? 0;
+            totalCheers += likeCount.toInt();
+          }
         }
-
         return Text(
           totalCheers.toString(),
           style: TextStyle(
-            color: Colors.pink[200], // 応援アイコンと同じ色
+            color: Colors.pink[200],
             fontWeight: FontWeight.bold,
             fontSize: 14,
           ),
@@ -318,90 +302,139 @@ class _CategoryQuestCard extends StatelessWidget {
       },
     );
   }
-  // ▲▲▲
 
   @override
   Widget build(BuildContext context) {
+    final int activeCount = activeQuests.length;
+    final int completedCount = completedQuests.length;
+    final bool isEmpty = activeQuests.isEmpty && completedQuests.isEmpty;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
       child: Card(
         elevation: 0,
+        color: Colors.grey[900],
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: Colors.grey[800]!), // 枠線を少しつける
+          side: BorderSide(
+            // 空の場合は枠線を薄く、通常時はカテゴリ色
+            color: isEmpty ? Colors.grey[800]! : color.withOpacity(0.5),
+            width: 1,
+          ),
         ),
         clipBehavior: Clip.antiAlias,
-        child: Column(
-          children: [
-            // カテゴリヘッダー
-            Container(
-              color: color.withOpacity(0.3),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  Icon(icon, color: Colors.white, size: 20),
-                  const SizedBox(width: 12),
-                  Text(
-                    categoryName,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                  ),
-                  const Spacer(),
-                  // クエスト数バッジ
-                  CircleAvatar(
-                    radius: 12,
-                    backgroundColor: color,
-                    child: Text(
-                      quests.length.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  )
-                ],
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            leading: Icon(icon, color: isEmpty ? Colors.grey : color),
+            title: Text(
+              categoryName,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isEmpty ? Colors.grey : color,
+                fontSize: 16,
               ),
             ),
-            // クエストリスト
-            Column(
-              children: quests.map((quest) {
-                // ▼▼▼ _MyQuestCard に _buildTotalCheerCount を渡す ▼▼▼
-                return _MyQuestCard(
-                  quest: quest,
-                  color: color,
-                  totalCheerWidget: _buildTotalCheerCount(quest.id),
-                );
-                // ▲▲▲
-              }).toList(),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: isEmpty ? Colors.grey[800] : color.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '$activeCount',
+                style: TextStyle(
+                  color: isEmpty ? Colors.grey : color,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
             ),
-          ],
+            backgroundColor: Colors.transparent,
+            collapsedBackgroundColor: Colors.transparent,
+            childrenPadding: const EdgeInsets.only(bottom: 12),
+            children: isEmpty
+                ? [
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(
+                        'このジャンルのクエストはまだありません',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      ),
+                    )
+                  ]
+                : [
+                    if (activeQuests.isNotEmpty)
+                      ...activeQuests.map((quest) {
+                        return _MyQuestCard(
+                          quest: quest,
+                          color: color,
+                          totalCheerWidget: _buildTotalCheerCount(quest.id),
+                        );
+                      }),
+                    if (completedQuests.isNotEmpty) ...[
+                      if (activeQuests.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12.0),
+                          child: Row(
+                            children: [
+                              Expanded(child: Divider(color: Colors.grey[800])),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8.0),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.check_circle_outline,
+                                        color: Colors.amber[200], size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      "達成済み ($completedCount)",
+                                      style: TextStyle(
+                                          color: Colors.amber[200],
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(child: Divider(color: Colors.grey[800])),
+                            ],
+                          ),
+                        ),
+                      ...completedQuests.map((quest) {
+                        return _MyQuestCard(
+                          quest: quest,
+                          color: color,
+                          isCompletedSection: true,
+                          totalCheerWidget: _buildTotalCheerCount(quest.id),
+                        );
+                      }),
+                    ],
+                  ],
+          ),
         ),
       ),
     );
   }
 }
-// ▲▲▲
 
-// ▼▼▼ [修正] 個別のクエストを表示するカード（_CategoryQuestCard の子ウィジェット）▼▼▼
 class _MyQuestCard extends StatelessWidget {
   final MyQuest quest;
-  final Color color; // カテゴリ色
-  final Widget totalCheerWidget; // ◀◀◀ 応援数ウィジェットを受け取る
+  final Color color;
+  final Widget totalCheerWidget;
+  final bool isCompletedSection;
 
   const _MyQuestCard({
     required this.quest,
     required this.color,
-    required this.totalCheerWidget, // ◀◀◀
+    required this.totalCheerWidget,
+    this.isCompletedSection = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final secondaryTextColor = Colors.grey[400]!;
 
-    // 日付計算
     final startDate = DateTime.tryParse(quest.startDate) ?? DateTime.now();
     final endDate = DateTime.tryParse(quest.endDate) ?? DateTime.now();
     final totalDuration = endDate.difference(startDate).inDays;
@@ -411,6 +444,10 @@ class _MyQuestCard extends StatelessWidget {
         ? (elapsedDuration / totalDuration).clamp(0.0, 1.0)
         : 0.0;
 
+    final BorderSide borderSide = isCompletedSection
+        ? BorderSide(color: Colors.amber.withOpacity(0.6), width: 1.5)
+        : BorderSide(color: Colors.grey[800]!);
+
     return InkWell(
       onTap: () {
         Navigator.of(context).push(MaterialPageRoute(
@@ -418,62 +455,83 @@ class _MyQuestCard extends StatelessWidget {
         ));
       },
       child: Container(
-        padding: const EdgeInsets.all(16.0),
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.all(12.0),
         decoration: BoxDecoration(
-          // 2つ目以降のクエストの上に線を入れる
-          border: Border(top: BorderSide(color: Colors.grey[800]!)),
+          color: Colors.grey[850]!.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.fromBorderSide(borderSide),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // クエストタイトル
-            Text(
-              quest.title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    quest.title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                    overflow: TextOverflow.ellipsis,
                   ),
+                ),
+                const SizedBox(width: 8),
+                if (quest.status == 'completed')
+                  const Icon(Icons.workspace_premium,
+                      color: Colors.amber, size: 20)
+                else
+                  Icon(Icons.arrow_forward_ios,
+                      color: Colors.grey[700], size: 14),
+              ],
             ),
-            const SizedBox(height: 12),
-            // ▼▼▼ 応援数をプログレスバーの上に追加 ▼▼▼
+            const SizedBox(height: 8),
             Row(
               children: [
                 Icon(Icons.local_fire_department,
                     color: Colors.pink[200], size: 16),
                 const SizedBox(width: 4),
-                totalCheerWidget, // ◀◀◀ 応援数ウィジェットを表示
+                totalCheerWidget,
                 const Spacer(),
-                if (quest.status == 'completed')
-                  Icon(Icons.check_circle, color: Colors.green[600], size: 16)
+                if (isCompletedSection)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(4),
+                        border:
+                            Border.all(color: Colors.amber.withOpacity(0.5))),
+                    child: Row(
+                      children: const [
+                        Icon(Icons.check, size: 12, color: Colors.amber),
+                        SizedBox(width: 4),
+                        Text(
+                          'COMPLETED',
+                          style: TextStyle(
+                              color: Colors.amber,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10),
+                        ),
+                      ],
+                    ),
+                  )
                 else
-                  Icon(Icons.hourglass_top,
-                      color: secondaryTextColor, size: 16),
+                  Text(
+                    '残り ${totalDuration - elapsedDuration} 日',
+                    style: TextStyle(color: secondaryTextColor, fontSize: 12),
+                  ),
               ],
             ),
             const SizedBox(height: 8),
-            // ▲▲▲
-            // プログレスバー
             LinearProgressIndicator(
-              value: progress,
+              value: isCompletedSection ? 1.0 : progress,
               backgroundColor: Colors.grey[800],
               borderRadius: BorderRadius.circular(10),
-              minHeight: 8,
-              valueColor: AlwaysStoppedAnimation<Color>(color),
-            ),
-            const SizedBox(height: 8),
-            // 日付
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  quest.startDate.replaceAll('-', '/'),
-                  style: TextStyle(color: secondaryTextColor, fontSize: 12),
-                ),
-                Text(
-                  quest.endDate.replaceAll('-', '/'),
-                  style: TextStyle(color: secondaryTextColor, fontSize: 12),
-                ),
-              ],
+              minHeight: 6,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                  isCompletedSection ? Colors.amber : color),
             ),
           ],
         ),
@@ -481,4 +539,3 @@ class _MyQuestCard extends StatelessWidget {
     );
   }
 }
-// ▲▲▲

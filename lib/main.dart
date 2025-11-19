@@ -1,21 +1,69 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart'; // Google Fonts
+import 'package:google_fonts/google_fonts.dart';
 import 'auth_gate.dart';
 import 'firebase_options.dart';
 import 'friends_screen.dart';
 import 'my_quests_screen.dart';
 import 'profile_screen.dart';
 import 'timeline_screen.dart';
-import 'explore_quests_screen.dart'; // 「探す」タブ
+import 'explore_quests_screen.dart';
+import 'utils/local_notification_service.dart'; // ▼ 追加
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // ▼▼▼ ローカル通知の初期化とスケジュール設定 ▼▼▼
+  await LocalNotificationService.init();
+  await LocalNotificationService.scheduleDailyNotification();
+  // ▲▲▲
+
+  // ▼▼▼ プッシュ通知 (FCM) の設定 ▼▼▼
+  try {
+    final messaging = FirebaseMessaging.instance;
+    NotificationSettings settings = await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+      print('ユーザーが通知を許可しました');
+      String? token = await messaging.getToken();
+      print('FCM Token: $token');
+      await _saveTokenToFirestore(token);
+    }
+  } catch (e) {
+    print('通知設定のエラー: $e');
+  }
+  // ▲▲▲
+
   runApp(const MyApp());
+}
+
+// (以下、_saveTokenToFirestore や MyApp クラスなどは変更なし)
+Future<void> _saveTokenToFirestore(String? token) async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user != null && token != null) {
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+        'fcmToken': token,
+        'lastTokenUpdate': FieldValue.serverTimestamp(),
+      });
+      print('FCMトークンを保存しました');
+    } catch (e) {
+      print('FCMトークンの保存に失敗: $e');
+    }
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -24,15 +72,14 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 1. 色の定義
-    final Color primaryAccent = Colors.deepOrange; // 炎のようなアクセント色
-    final Color backgroundColor = Colors.black; // ベース背景
-    final Color surfaceColor = Colors.grey[900]!; // カードやAppBarの背景色
-    final Color primaryTextColor = Colors.white; // 通常の文字色
-    final Color secondaryTextColor = Colors.grey[400]!; // やや暗い文字色
+    final Color primaryAccent = Colors.deepOrange;
+    final Color backgroundColor = Colors.black;
+    final Color surfaceColor = Colors.grey[900]!;
+    final Color primaryTextColor = Colors.white;
+    final Color secondaryTextColor = Colors.grey[400]!;
 
     // 2. テキストテーマの定義
     final baseTheme = ThemeData(brightness: Brightness.dark);
-    // 全体の基本フォントは 'Inter' を維持
     final textTheme = GoogleFonts.interTextTheme(baseTheme.textTheme).apply(
       bodyColor: primaryTextColor,
       displayColor: primaryTextColor,
@@ -44,55 +91,42 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: backgroundColor,
-
-        // 基本のカラー設定
         colorScheme: ColorScheme.fromSeed(
           seedColor: primaryAccent,
           brightness: Brightness.dark,
           background: backgroundColor,
-          surface: surfaceColor, // カード、ダイアログ
-          onBackground: primaryTextColor, // 黒背景上のテキスト
-          onSurface: primaryTextColor, // カード上のテキスト
-          primary: primaryAccent, // ボタン、アクティブ要素
-          onPrimary: Colors.white, // ボタン上のテキスト
-          secondary: Colors.redAccent, // サブのアクセント
+          surface: surfaceColor,
+          onBackground: primaryTextColor,
+          onSurface: primaryTextColor,
+          primary: primaryAccent,
+          onPrimary: Colors.white,
+          secondary: Colors.redAccent,
         ),
-
-        // テキストテーマ
         textTheme: textTheme,
-
-        // AppBarのテーマ
         appBarTheme: AppBarTheme(
-          backgroundColor: surfaceColor.withOpacity(0.85), // AppBarの背景
-          foregroundColor: primaryTextColor, // 戻る矢印など
+          backgroundColor: surfaceColor.withOpacity(0.85),
+          foregroundColor: primaryTextColor,
           elevation: 0,
-          // ▼▼▼ フォントサイズを 1.5倍 (displaySmall) に変更 ▼▼▼
           titleTextStyle: GoogleFonts.orbitron(
             textStyle: textTheme.displaySmall?.copyWith(
-              // ◀◀◀ サイズ基準を変更
               fontWeight: FontWeight.bold,
               color: primaryAccent,
             ),
           ),
-          // ▲▲▲
         ),
-
-        // カードのテーマ
         cardTheme: CardThemeData(
-          color: surfaceColor, // カード背景
+          color: surfaceColor,
           elevation: 2,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12.0),
-            side: BorderSide(color: Colors.grey[800]!), // カードの枠線
+            side: BorderSide(color: Colors.grey[800]!),
           ),
         ),
-
-        // 下部ナビゲーションバーのテーマ
         bottomNavigationBarTheme: BottomNavigationBarThemeData(
-          backgroundColor: surfaceColor, // ナビゲーションバーの背景
+          backgroundColor: surfaceColor,
           type: BottomNavigationBarType.fixed,
-          selectedItemColor: primaryAccent, // 選択中のアイコンを炎色に
-          unselectedItemColor: secondaryTextColor, // 非選択のアイコン
+          selectedItemColor: primaryAccent,
+          unselectedItemColor: secondaryTextColor,
           selectedLabelStyle: TextStyle(fontSize: 12.0),
           unselectedLabelStyle: TextStyle(fontSize: 12.0),
         ),
@@ -103,6 +137,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
+// (HomeScreenクラスも変更なし)
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -120,9 +155,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId != null) {
       _widgetOptions = <Widget>[
-        const MyQuestsScreen(), // 1番目 (Index 0)
+        const MyQuestsScreen(),
         const TimelineScreen(),
-        const ExploreQuestsScreen(), // 3番目 (Index 2)
+        const ExploreQuestsScreen(),
         const FriendsScreen(),
         ProfileScreen(userId: currentUserId),
       ];
