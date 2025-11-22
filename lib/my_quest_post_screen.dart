@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'models/my_quest.dart';
 import 'models/user_profile.dart' as model;
 import 'utils/progression.dart';
+import 'profile_screen.dart'; // ◀◀◀ 追加: プロフィール画面へ遷移するため
 
 bool _isSameDate(DateTime date1, DateTime date2) {
   return date1.year == date2.year &&
@@ -35,7 +36,6 @@ class DecimalTextInputFormatter extends TextInputFormatter {
 
 class MyQuestPostScreen extends StatefulWidget {
   final MyQuest? initialQuest;
-  // ▼▼▼ 追加: 一言投稿フラグ ▼▼▼
   final bool isShortPost;
 
   const MyQuestPostScreen({
@@ -43,7 +43,6 @@ class MyQuestPostScreen extends StatefulWidget {
     this.initialQuest,
     this.isShortPost = false,
   });
-  // ▲▲▲
 
   @override
   State<MyQuestPostScreen> createState() => _MyQuestPostScreenState();
@@ -109,9 +108,6 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
   }
 
   void _showMyQuestPicker() {
-    // 一言投稿でクエスト選択を禁止したい場合はここで制御できますが、
-    // 一言投稿でも「やっぱりクエストに紐付けたい」となる可能性もあるため
-    // そのまま選択可能にしておきます。
     if (widget.initialQuest != null) return;
 
     showModalBottomSheet(
@@ -166,13 +162,12 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
     final text = _textController.text.trim();
     final double? timeSpentHours = double.tryParse(_timeController.text.trim());
 
-    // ▼▼▼ 修正: 一言投稿の場合はクエスト選択を必須にしない ▼▼▼
+    // 一言投稿以外はクエスト必須
     if (!widget.isShortPost && _selectedMyQuest == null) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('紐付けるマイクエストを選択してください。')));
       return;
     }
-    // ▲▲▲
 
     if (text.isEmpty && _imageFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -180,7 +175,7 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
       return;
     }
 
-    // 一言投稿なら時間は必須ではない（任意）、通常投稿なら必須
+    // 一言投稿以外は時間入力必須
     if (!widget.isShortPost &&
         (timeSpentHours == null || timeSpentHours <= 0)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -221,9 +216,7 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
         'timeSpentHours': timeSpentHours,
         'isBlessed': false,
         'isWisdomShared': _shareWisdom,
-        // ▼▼▼ 追加: 一言投稿フラグを保存 ▼▼▼
         'isShortPost': widget.isShortPost,
-        // ▲▲▲
       });
 
       // --- 連続記録更新ロジック ---
@@ -291,7 +284,22 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
         transaction.update(userRef, updates);
       });
 
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        // ▼▼▼ 変更: showXpAnimation: true を渡す ▼▼▼
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => ProfileScreen(
+              userId: user.uid,
+              showXpAnimation: true, // エフェクトをONにする
+            ),
+          ),
+        );
+        // ▲▲▲
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('記録しました！XPゲット！')),
+        );
+      }
     } catch (e) {
       print("投稿エラー: $e");
       if (mounted) {
@@ -321,7 +329,6 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 一言投稿でない場合、または一言投稿でも時間を記録したい場合
             TextField(
               controller: _timeController,
               decoration: InputDecoration(
@@ -358,7 +365,6 @@ class _MyQuestPostScreenState extends State<MyQuestPostScreen> {
                   onPressed: _pickImage,
                 ),
                 const SizedBox(width: 8),
-                // 一言投稿モードなら、クエスト選択は任意なのでデザインを少し変える
                 if (widget.initialQuest == null)
                   ActionChip(
                     avatar: Icon(Icons.flag_outlined,

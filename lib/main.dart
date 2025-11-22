@@ -1,3 +1,5 @@
+// lib/main.dart
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -11,7 +13,7 @@ import 'my_quests_screen.dart';
 import 'profile_screen.dart';
 import 'timeline_screen.dart';
 import 'explore_quests_screen.dart';
-import 'utils/local_notification_service.dart'; // ▼ 追加
+import 'utils/local_notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,12 +21,9 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // ▼▼▼ ローカル通知の初期化とスケジュール設定 ▼▼▼
   await LocalNotificationService.init();
   await LocalNotificationService.scheduleDailyNotification();
-  // ▲▲▲
 
-  // ▼▼▼ プッシュ通知 (FCM) の設定 ▼▼▼
   try {
     final messaging = FirebaseMessaging.instance;
     NotificationSettings settings = await messaging.requestPermission(
@@ -34,20 +33,26 @@ void main() async {
     );
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      print('ユーザーが通知を許可しました');
+      if (Platform.isIOS) {
+        String? apnsToken = await messaging.getAPNSToken();
+        if (apnsToken == null) {
+          for (int i = 0; i < 3; i++) {
+            await Future.delayed(const Duration(seconds: 1));
+            apnsToken = await messaging.getAPNSToken();
+            if (apnsToken != null) break;
+          }
+        }
+      }
       String? token = await messaging.getToken();
-      print('FCM Token: $token');
       await _saveTokenToFirestore(token);
     }
   } catch (e) {
     print('通知設定のエラー: $e');
   }
-  // ▲▲▲
 
   runApp(const MyApp());
 }
 
-// (以下、_saveTokenToFirestore や MyApp クラスなどは変更なし)
 Future<void> _saveTokenToFirestore(String? token) async {
   final user = FirebaseAuth.instance.currentUser;
   if (user != null && token != null) {
@@ -59,9 +64,8 @@ Future<void> _saveTokenToFirestore(String? token) async {
         'fcmToken': token,
         'lastTokenUpdate': FieldValue.serverTimestamp(),
       });
-      print('FCMトークンを保存しました');
     } catch (e) {
-      print('FCMトークンの保存に失敗: $e');
+      print('FCMトークン保存エラー: $e');
     }
   }
 }
@@ -71,21 +75,18 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 1. 色の定義
     final Color primaryAccent = Colors.deepOrange;
     final Color backgroundColor = Colors.black;
     final Color surfaceColor = Colors.grey[900]!;
     final Color primaryTextColor = Colors.white;
     final Color secondaryTextColor = Colors.grey[400]!;
 
-    // 2. テキストテーマの定義
     final baseTheme = ThemeData(brightness: Brightness.dark);
     final textTheme = GoogleFonts.interTextTheme(baseTheme.textTheme).apply(
       bodyColor: primaryTextColor,
       displayColor: primaryTextColor,
     );
 
-    // 3. MaterialAppに新しいテーマを適用
     return MaterialApp(
       title: 'MiniQuest',
       theme: ThemeData(
@@ -137,7 +138,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// (HomeScreenクラスも変更なし)
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -147,36 +147,38 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
-  List<Widget> _widgetOptions = [];
 
-  @override
-  void initState() {
-    super.initState();
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    if (currentUserId != null) {
-      _widgetOptions = <Widget>[
-        const MyQuestsScreen(),
-        const TimelineScreen(),
-        const ExploreQuestsScreen(),
-        const FriendsScreen(),
-        ProfileScreen(userId: currentUserId),
-      ];
-    }
-  }
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
+  // ▼▼▼ 修正: フラグ受け渡しを削除しシンプルに ▼▼▼
+  final List<Widget> _widgetOptions = [
+    const MyQuestsScreen(),
+    const TimelineScreen(),
+    const ExploreQuestsScreen(),
+    const FriendsScreen(),
+    // ProfileScreen は initState で設定する必要があるためここでは仮置き
+    const SizedBox(),
+  ];
+  // ▲▲▲
 
   @override
   Widget build(BuildContext context) {
-    if (_widgetOptions.isEmpty) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
+    // ユーザーIDが取得できるまで待つ
+    if (currentUserId == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+
+    // ProfileScreen だけは userId が必要なのでここで生成
+    final List<Widget> screens = [
+      const MyQuestsScreen(),
+      const TimelineScreen(),
+      const ExploreQuestsScreen(),
+      const FriendsScreen(),
+      ProfileScreen(userId: currentUserId),
+    ];
+
     return Scaffold(
-      body: Center(child: _widgetOptions.elementAt(_selectedIndex)),
+      body: Center(child: screens.elementAt(_selectedIndex)),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         items: const <BottomNavigationBarItem>[
@@ -187,7 +189,11 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'プロフィール'),
         ],
         currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
+        onTap: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
       ),
     );
   }

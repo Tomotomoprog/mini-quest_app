@@ -1,12 +1,11 @@
 // lib/auth_gate.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'initial_profile_setup_screen.dart';
 import 'login_screen.dart';
 import 'main.dart';
-// import 'avatar_creation_screen.dart'; // ◀◀◀ 削除
-import 'account_name_screen.dart';
-import 'initial_profile_setup_screen.dart'; // ◀◀◀ 新しい画面をインポート
+import 'tutorial_screens.dart';
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
@@ -15,47 +14,47 @@ class AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, authSnapshot) {
-        if (!authSnapshot.hasData) {
+      builder: (context, snapshot) {
+        // 1. 認証状態のチェック
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (!snapshot.hasData) {
           return const LoginScreen();
         }
 
-        final user = authSnapshot.data!;
+        final user = snapshot.data!;
 
+        // 2. ユーザーデータのチェック
         return StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance
               .collection('users')
               .doc(user.uid)
               .snapshots(),
-          builder: (context, userDocSnapshot) {
-            if (userDocSnapshot.connectionState == ConnectionState.waiting) {
+          builder: (context, userSnapshot) {
+            if (userSnapshot.connectionState == ConnectionState.waiting) {
               return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              );
+                  body: Center(child: CircularProgressIndicator()));
             }
 
-            // 1. ドキュメント自体が存在しない場合
-            if (!userDocSnapshot.hasData || !userDocSnapshot.data!.exists) {
-              return const AccountNameScreen();
+            // プロフィール未作成なら作成画面へ
+            if (!userSnapshot.hasData || !userSnapshot.data!.exists) {
+              return const InitialProfileSetupScreen();
             }
 
-            final data = userDocSnapshot.data!.data() as Map<String, dynamic>;
+            final userData = userSnapshot.data!.data() as Map<String, dynamic>;
 
-            // 2. accountName がない場合
-            if (!data.containsKey('accountName') ||
-                data['accountName'] == null) {
-              return const AccountNameScreen();
-            }
+            // ▼▼▼ 修正: 完了フラグをチェックして振り分け ▼▼▼
+            final bool isTutorialCompleted =
+                userData['isTutorialCompleted'] ?? false;
 
-            // ▼▼▼ 'avatar' のチェックを 'bio' のチェックに変更 ▼▼▼
-            // 2b. bio (自己紹介) がない場合
-            if (!data.containsKey('bio') || data['bio'] == null) {
-              return const InitialProfileSetupScreen(); // ◀◀◀ 遷移先を変更
+            if (isTutorialCompleted) {
+              return const HomeScreen();
+            } else {
+              return const TutorialSelectionScreen();
             }
             // ▲▲▲
-
-            // 3. すべて揃っている場合
-            return const HomeScreen();
           },
         );
       },

@@ -6,11 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'models/post.dart';
 
-// グラフ表示用のデータクラス
 class _ChartDataPoint {
-  final String label; // X軸のラベル (例: "11/1", "11/1~")
-  final Map<String, double> efforts; // クエストIDごとの努力時間
-  final DateTime startDate; // 集計期間の開始日
+  final String label;
+  final Map<String, double> efforts;
+  final DateTime startDate;
 
   _ChartDataPoint({
     required this.label,
@@ -22,7 +21,14 @@ class _ChartDataPoint {
 }
 
 class EffortHistoryScreen extends StatefulWidget {
-  const EffortHistoryScreen({super.key});
+  // ▼▼▼ 追加: 表示対象のユーザーIDを受け取る ▼▼▼
+  final String? userId;
+
+  const EffortHistoryScreen({
+    super.key,
+    this.userId, // コンストラクタに追加
+  });
+  // ▲▲▲
 
   @override
   State<EffortHistoryScreen> createState() => _EffortHistoryScreenState();
@@ -30,21 +36,12 @@ class EffortHistoryScreen extends StatefulWidget {
 
 class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
   bool _isLoading = true;
-
-  // 選択された期間（日数）
   int _selectedPeriodDays = 7;
-
-  // 集計後のグラフデータ
   List<_ChartDataPoint> _chartData = [];
-
-  // クエスト情報 (ID -> タイトル/色)
   Map<String, String> _questTitles = {};
   Map<String, Color> _questColors = {};
-
-  // 期間内の合計時間
   double _totalPeriodHours = 0.0;
 
-  // カラーパレット
   final List<Color> _chartColors = [
     Colors.blue,
     Colors.redAccent,
@@ -74,29 +71,28 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
     }
   }
 
-  // 集計単位（日数）を決定する
   int _getAggregationStep() {
-    if (_selectedPeriodDays == 30) return 7; // 1ヶ月 -> 1週間
-    if (_selectedPeriodDays == 90) return 14; // 3ヶ月 -> 2週間
-    return 1; // 1週間 -> 1日
+    if (_selectedPeriodDays == 30) return 7;
+    if (_selectedPeriodDays == 90) return 14;
+    return 1;
   }
 
   Future<void> _fetchEffortData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    // ▼▼▼ 修正: 渡されたIDがあればそれを使い、なければ自分のIDを使う ▼▼▼
+    final targetUserId =
+        widget.userId ?? FirebaseAuth.instance.currentUser?.uid;
+
+    if (targetUserId == null) return;
+    // ▲▲▲
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-
-    // データの取得開始日
-    // (今日を含めて _selectedPeriodDays 分遡る)
     final startDate = today.subtract(Duration(days: _selectedPeriodDays - 1));
 
     try {
-      // 1. Firestoreから期間内のデータを取得
       final snapshot = await FirebaseFirestore.instance
           .collection('posts')
-          .where('uid', isEqualTo: user.uid)
+          .where('uid', isEqualTo: targetUserId) // ◀◀◀ targetUserId を使用
           .where('createdAt',
               isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
           .orderBy('createdAt', descending: false)
@@ -107,9 +103,7 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
       int colorIndex = 0;
       double tempTotalHours = 0.0;
 
-      // 2. 集計枠（バケット）の準備
       final int step = _getAggregationStep();
-      // 必要なバケット数 (切り上げ)
       final int bucketCount = (_selectedPeriodDays / step).ceil();
 
       List<_ChartDataPoint> tempData = List.generate(bucketCount, (index) {
@@ -118,7 +112,6 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
         if (step == 1) {
           label = DateFormat('M/d').format(bucketStart);
         } else {
-          // 範囲の場合は "M/d~" のように表示
           label = "${DateFormat('M/d').format(bucketStart)}~";
         }
         return _ChartDataPoint(
@@ -128,7 +121,6 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
         );
       });
 
-      // 3. 投稿データをバケットに振り分け
       for (var doc in snapshot.docs) {
         final post = Post.fromFirestore(doc);
         if (post.timeSpentHours == null || post.timeSpentHours! <= 0) continue;
@@ -137,12 +129,9 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
         final normalizedDate =
             DateTime(postDate.year, postDate.month, postDate.day);
 
-        // 範囲外チェック
         if (normalizedDate.isBefore(startDate)) continue;
 
-        // 開始日からの経過日数
         final diffDays = normalizedDate.difference(startDate).inDays;
-        // バケットのインデックスを計算
         final bucketIndex = diffDays ~/ step;
 
         if (bucketIndex >= 0 && bucketIndex < tempData.length) {
@@ -150,7 +139,6 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
           final questTitle =
               post.myQuestTitle ?? (post.isShortPost ? '一言投稿' : 'その他');
 
-          // クエスト情報の登録
           if (!tempQuestTitles.containsKey(questId)) {
             tempQuestTitles[questId] = questTitle;
             tempQuestColors[questId] =
@@ -158,11 +146,9 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
             colorIndex++;
           }
 
-          // 時間を加算
           final efforts = tempData[bucketIndex].efforts;
           efforts[questId] = (efforts[questId] ?? 0) + post.timeSpentHours!;
 
-          // 合計時間も加算
           tempTotalHours += post.timeSpentHours!;
         }
       }
@@ -193,7 +179,6 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // ▼▼▼ ヘッダー (期間選択 & 合計) ▼▼▼
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -237,8 +222,6 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
                     ],
                   ),
                   const SizedBox(height: 24),
-
-                  // ▼▼▼ 棒グラフ ▼▼▼
                   Expanded(
                     child: BarChart(
                       BarChartData(
@@ -250,7 +233,6 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
                             tooltipMargin: 8,
                             getTooltipItem: (group, groupIndex, rod, rodIndex) {
                               final dataPoint = _chartData[group.x];
-                              // ロッドのスタック順序からクエストIDを特定
                               final questId =
                                   _getQuestIdFromRodIndex(dataPoint, rodIndex);
                               final title = _questTitles[questId] ?? 'その他';
@@ -321,7 +303,7 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
                         gridData: FlGridData(
                           show: true,
                           drawVerticalLine: false,
-                          horizontalInterval: 1, // 1時間ごとに線
+                          horizontalInterval: 1,
                           getDrawingHorizontalLine: (value) => FlLine(
                             color: Colors.grey.withOpacity(0.1),
                             strokeWidth: 1,
@@ -332,10 +314,7 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 24),
-
-                  // ▼▼▼ 凡例（レジェンド） ▼▼▼
                   const Text('内訳',
                       style:
                           TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
@@ -374,12 +353,10 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
     for (var data in _chartData) {
       if (data.total > maxTotal) maxTotal = data.total;
     }
-    // 最低でも5、または最大値の1.2倍 (端数を綺麗にするためceilも可)
     return (maxTotal < 5 ? 5 : maxTotal * 1.2).toDouble();
   }
 
   String _getQuestIdFromRodIndex(_ChartDataPoint dataPoint, int rodStackIndex) {
-    // _generateBarGroups の forEach 順序に依存
     if (rodStackIndex < dataPoint.efforts.length) {
       return dataPoint.efforts.keys.elementAt(rodStackIndex);
     }
@@ -404,7 +381,7 @@ class _EffortHistoryScreenState extends State<EffortHistoryScreen> {
         barRods: [
           BarChartRodData(
             toY: currentY,
-            width: 24, // 棒の太さ
+            width: 24,
             color: Colors.transparent,
             rodStackItems: rodStackItems,
             borderRadius: BorderRadius.circular(2),

@@ -1,21 +1,28 @@
 // lib/widgets/my_quest_detail/quest_detail_header.dart
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../models/my_quest.dart';
 import '../../models/friendship.dart';
 
-// クラス名をパブリックに変更 (_QuestDetailHeader -> QuestDetailHeader)
 class QuestDetailHeader extends StatelessWidget {
   final MyQuest quest;
   final bool isFriendOrMyQuest;
   final FriendshipStatus friendshipStatus;
   final VoidCallback onSendRequest;
+  // ▼▼▼ 追加: 編集・削除用コールバック ▼▼▼
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+  // ▲▲▲
+
   const QuestDetailHeader({
-    super.key, // ◀◀◀ super.key を追加
+    super.key,
     required this.quest,
     required this.isFriendOrMyQuest,
     required this.friendshipStatus,
     required this.onSendRequest,
+    // ▼▼▼ 追加 ▼▼▼
+    this.onEdit,
+    this.onDelete,
+    // ▲▲▲
   });
 
   Color _getColorForCategory(String category, BuildContext context) {
@@ -78,6 +85,7 @@ class QuestDetailHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(icon, color: color, size: 28),
               const SizedBox(width: 8),
@@ -88,6 +96,47 @@ class QuestDetailHeader extends StatelessWidget {
                       fontWeight: FontWeight.bold, color: Colors.white),
                 ),
               ),
+              // ▼▼▼ 追加: 編集・削除メニューボタン ▼▼▼
+              if (onEdit != null && onDelete != null)
+                PopupMenuButton<String>(
+                  icon: Icon(Icons.more_vert, color: Colors.grey.shade600),
+                  onSelected: (value) {
+                    if (value == 'edit') {
+                      onEdit!();
+                    } else if (value == 'delete') {
+                      onDelete!();
+                    }
+                  },
+                  itemBuilder: (BuildContext context) =>
+                      <PopupMenuEntry<String>>[
+                    const PopupMenuItem<String>(
+                      value: 'edit',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit, size: 20),
+                          SizedBox(width: 8),
+                          Text('編集する'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    PopupMenuItem<String>(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline,
+                              color: Theme.of(context).colorScheme.error,
+                              size: 20),
+                          SizedBox(width: 8),
+                          Text('クエスト削除',
+                              style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              // ▲▲▲
             ],
           ),
           const SizedBox(height: 16),
@@ -140,70 +189,37 @@ class QuestDetailHeader extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          StreamBuilder<DocumentSnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('my_quests')
-                  .doc(quest.id)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData || !snapshot.data!.exists) {
-                  return Text(
-                    '期間: ${quest.startDate.replaceAll('-', '/')} 〜 ${quest.endDate.replaceAll('-', '/')}',
+          // 期間とプログレスバー
+          if (quest.status == 'active') ...[
+            LinearProgressIndicator(
+              value: progress,
+              backgroundColor: color.withOpacity(0.2),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(quest.startDate.replaceAll('-', '/'),
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
-                        ?.copyWith(color: secondaryTextColor),
-                  );
-                }
-
-                final currentQuest = MyQuest.fromFirestore(snapshot.data!);
-
-                if (currentQuest.status == 'active') {
-                  return Column(
-                    children: [
-                      LinearProgressIndicator(
-                        value: progress,
-                        backgroundColor: color.withOpacity(0.2),
-                        valueColor: AlwaysStoppedAnimation<Color>(color),
-                        minHeight: 8,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(quest.startDate.replaceAll('-', '/'),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: secondaryTextColor)),
-                          Text(
-                              remainingDays >= 0
-                                  ? '残り $remainingDays 日'
-                                  : '期間終了',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(fontWeight: FontWeight.bold)),
-                          Text(quest.endDate.replaceAll('-', '/'),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: secondaryTextColor)),
-                        ],
-                      ),
-                    ],
-                  );
-                } else {
-                  return Text(
-                    '期間: ${quest.startDate.replaceAll('-', '/')} 〜 ${quest.endDate.replaceAll('-', '/')}',
+                        ?.copyWith(color: secondaryTextColor)),
+                Text(remainingDays >= 0 ? '残り $remainingDays 日' : '期間終了',
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
-                        ?.copyWith(color: secondaryTextColor),
-                  );
-                }
-              }),
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+                Text(quest.endDate.replaceAll('-', '/'),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: secondaryTextColor)),
+              ],
+            ),
+          ],
           const SizedBox(height: 24),
           Container(
             width: double.infinity,
@@ -230,16 +246,6 @@ class QuestDetailHeader extends StatelessWidget {
                     )),
               ],
             ),
-          ),
-          const SizedBox(height: 24),
-          const Divider(),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Text('冒険の記録',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold)),
           ),
         ],
       ),

@@ -1,23 +1,29 @@
 // lib/models/my_quest.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// Webアプリの useMyQuests.ts を参考にしたMyQuestモデル
 class MyQuest {
   final String id;
-  final String uid;
+  final String uid; // 作成者のUID
   final String title;
-  final String description; // 詳細画面で使うため追加
+  final String description;
   final String motivation;
   final String category;
   final String status;
   final String startDate;
   final String endDate;
   final Timestamp createdAt;
-  final Timestamp? completedAt; // 達成日時
-  // ▼▼▼ 以下の2フィールドを追加 ▼▼▼
+  final Timestamp? completedAt;
   final String userName;
   final String? userPhotoURL;
-  // ▲▲▲ 以下の2フィールドを追加 ▲▲▲
+
+  final String schedule;
+  final String minimumStep;
+  final String reward;
+
+  // ▼▼▼ 追加: フレンドクエスト・バトル用 ▼▼▼
+  final String type; // 'personal', 'friend', 'battle'
+  final List<String> participantIds; // 参加者のUIDリスト（自分含む）
+  // ▲▲▲
 
   MyQuest({
     required this.id,
@@ -31,32 +37,49 @@ class MyQuest {
     required this.endDate,
     required this.createdAt,
     this.completedAt,
-    // ▼▼▼ コンストラクタを修正 ▼▼▼
     required this.userName,
     this.userPhotoURL,
-    // ▲▲▲ コンストラクタを修正 ▲▲▲
+    this.schedule = '',
+    this.minimumStep = '',
+    this.reward = '',
+    // ▼▼▼ 追加 ▼▼▼
+    this.type = 'personal',
+    this.participantIds = const [],
+    // ▲▲▲
   });
 
   factory MyQuest.fromFirestore(DocumentSnapshot doc) {
-    // ▼▼▼ doc.data() が null の場合に空のMapを割り当てるように修正 ▼▼▼
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>? ?? {};
-    // ▲▲▲
+
+    // participantIds の読み込み（古いデータ互換のため、ない場合はuidのみのリストにする）
+    List<String> participants = [];
+    if (data['participantIds'] != null) {
+      participants = List<String>.from(data['participantIds']);
+    } else if (data['uid'] != null) {
+      participants = [data['uid']];
+    }
+
     return MyQuest(
       id: doc.id,
       uid: data['uid'] ?? '',
       title: data['title'] ?? '',
-      description: data['description'] ?? '', // description を読み込む
+      description: data['description'] ?? '',
       motivation: data['motivation'] ?? '',
       category: data['category'] ?? 'Life',
       status: data['status'] ?? 'active',
       startDate: data['startDate'] ?? '',
       endDate: data['endDate'] ?? '',
       createdAt: data['createdAt'] ?? Timestamp.now(),
-      completedAt: data['completedAt'], // completedAt を読み込む
-      // ▼▼▼ 読み込み処理を追加 ▼▼▼
+      completedAt: data['completedAt'],
       userName: data['userName'] ?? '名無しさん',
       userPhotoURL: data['userPhotoURL'],
-      // ▲▲▲ 読み込み処理を追加 ▲▲▲
+      schedule: data['schedule'] ?? '',
+      minimumStep: data['minimumStep'] ?? '',
+      reward: data['reward'] ?? '',
+      // ▼▼▼ 追加 ▼▼▼
+      type: data['type'] ?? 'personal',
+      participantIds: participants,
+      // ▲▲▲
     );
   }
 
@@ -72,10 +95,15 @@ class MyQuest {
     String? endDate,
     Timestamp? createdAt,
     Timestamp? completedAt,
-    // ▼▼▼ copyWith を修正 ▼▼▼
     String? userName,
     String? userPhotoURL,
-    // ▲▲▲ copyWith を修正 ▲▲▲
+    String? schedule,
+    String? minimumStep,
+    String? reward,
+    // ▼▼▼ 追加 ▼▼▼
+    String? type,
+    List<String>? participantIds,
+    // ▲▲▲
   }) {
     return MyQuest(
       id: id ?? this.id,
@@ -89,10 +117,15 @@ class MyQuest {
       endDate: endDate ?? this.endDate,
       createdAt: createdAt ?? this.createdAt,
       completedAt: completedAt ?? this.completedAt,
-      // ▼▼▼ copyWith を修正 ▼▼▼
       userName: userName ?? this.userName,
       userPhotoURL: userPhotoURL ?? this.userPhotoURL,
-      // ▲▲▲ copyWith を修正 ▲▲▲
+      schedule: schedule ?? this.schedule,
+      minimumStep: minimumStep ?? this.minimumStep,
+      reward: reward ?? this.reward,
+      // ▼▼▼ 追加 ▼▼▼
+      type: type ?? this.type,
+      participantIds: participantIds ?? this.participantIds,
+      // ▲▲▲
     );
   }
 }

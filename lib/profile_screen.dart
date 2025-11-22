@@ -1,6 +1,4 @@
-// lib/profile_screen.dart
 import 'dart:io';
-import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -8,16 +6,25 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'models/user_profile.dart';
-import 'models/friendship.dart'; // ◀◀◀ フレンドステータスをインポート
+import 'models/friendship.dart';
 import 'utils/progression.dart';
 
 import 'widgets/profile/profile_stats_tab.dart';
 import 'widgets/profile/profile_posts_tab.dart';
 import 'widgets/profile/profile_my_quests_tab.dart';
+import 'profile_friends_list_screen.dart'; // ◀◀◀ 追加: フレンド一覧画面への遷移に必要
 
 class ProfileScreen extends StatefulWidget {
   final String userId;
-  const ProfileScreen({super.key, required this.userId});
+  // ▼▼▼ 追加: アニメーション用パラメータ ▼▼▼
+  final bool showXpAnimation;
+
+  const ProfileScreen({
+    super.key,
+    required this.userId,
+    this.showXpAnimation = false,
+  });
+  // ▲▲▲
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -27,19 +34,16 @@ class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  // ▼▼▼ 状態変数を追加 ▼▼▼
   FriendshipStatus _friendshipStatus = FriendshipStatus.none;
   bool _isLoadingStatus = true;
-  // ▲▲▲
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _checkFriendshipStatus(); // ◀◀◀ フレンド関係をチェック
+    _checkFriendshipStatus();
   }
 
-  // ▼▼▼ 別のプロフィールに移動したときに再チェックする処理 ▼▼▼
   @override
   void didUpdateWidget(ProfileScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -47,7 +51,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       _checkFriendshipStatus();
     }
   }
-  // ▲▲▲
 
   @override
   void dispose() {
@@ -58,7 +61,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   bool get _isMyProfile =>
       FirebaseAuth.instance.currentUser?.uid == widget.userId;
 
-  // ▼▼▼ フレンドステータスを確認する関数 ▼▼▼
   Future<void> _checkFriendshipStatus() async {
     setState(() {
       _isLoadingStatus = true;
@@ -66,7 +68,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     final myId = FirebaseAuth.instance.currentUser?.uid;
     final otherId = widget.userId;
 
-    // ログインしていない、または自分のプロフィールの場合
     if (myId == null) {
       setState(() {
         _friendshipStatus = FriendshipStatus.none;
@@ -76,13 +77,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
     if (myId == otherId) {
       setState(() {
-        _friendshipStatus = FriendshipStatus.accepted; // 自分のプロフは常時許可
+        _friendshipStatus = FriendshipStatus.accepted;
         _isLoadingStatus = false;
       });
       return;
     }
 
-    // フレンドかどうかをDBに確認
     final db = FirebaseFirestore.instance;
     final query1 = db
         .collection('friendships')
@@ -109,7 +109,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       });
     }
   }
-  // ▲▲▲
 
   Future<void> _updateProfilePicture() async {
     final picker = ImagePicker();
@@ -153,22 +152,36 @@ class _ProfileScreenState extends State<ProfileScreen>
       appBar: AppBar(
         title: const Text('MiniQuest'),
         actions: [
+          // ▼▼▼ 修正: 自分の場合はログアウト、他人の場合はフレンド一覧 ▼▼▼
           if (_isMyProfile)
             IconButton(
               icon: const Icon(Icons.logout),
               tooltip: 'ログアウト',
               onPressed: () => FirebaseAuth.instance.signOut(),
             )
+          else
+            IconButton(
+              icon: const Icon(Icons.people),
+              tooltip: 'フレンド一覧',
+              onPressed: () {
+                // まだユーザー名が取得できていない場合のフォールバック
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => ProfileFriendsListScreen(
+                      userId: widget.userId,
+                      userName: 'このユーザー', // 必要ならStreamBuilder内で取得して渡す形に修正可
+                    ),
+                  ),
+                );
+              },
+            ),
+          // ▲▲▲
         ],
-        // ▼▼▼ TabBarのロジックを修正 ▼▼▼
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(kToolbarHeight),
-          // フレンドステータスが読み込み中の場合はタブを隠す
           child: _isLoadingStatus
-              ? const SizedBox.shrink() // 空白
+              ? const SizedBox.shrink()
               : Builder(builder: (context) {
-                  // contextを正しく取得
-                  // フレンドか自分の場合は全タブ表示
                   final bool canViewPrivateTabs = _isMyProfile ||
                       _friendshipStatus == FriendshipStatus.accepted;
 
@@ -198,10 +211,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                         ]),
                       ),
                     ],
-                    // ロック中のタブがタップされたら無効化する
                     onTap: (index) {
                       if (!canViewPrivateTabs && (index == 1 || index == 2)) {
-                        _tabController.index = 0; // ステータスタブに戻す
+                        _tabController.index = 0;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: const Text('フレンドになると閲覧できます'),
@@ -213,7 +225,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                   );
                 }),
         ),
-        // ▲▲▲
       ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
@@ -222,7 +233,6 @@ class _ProfileScreenState extends State<ProfileScreen>
             .snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData || _isLoadingStatus) {
-            // ◀◀◀ 読み込み中を追加
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.data!.exists) {
@@ -234,33 +244,25 @@ class _ProfileScreenState extends State<ProfileScreen>
           final level = progress['level']!;
           final jobInfo = computeJob(userProfile.stats, level);
 
-          // ▼▼▼ 表示可否を決定 ▼▼▼
           final bool canViewPrivateTabs =
               _isMyProfile || _friendshipStatus == FriendshipStatus.accepted;
-          // ▲▲▲
 
           return TabBarView(
-            // ▼▼▼ TabControllerの操作はTabBarのonTapに任せる ▼▼▼
-            // physics: canViewPrivateTabs
-            //     ? null // フレンドならスワイプ可能
-            //     : const NeverScrollableScrollPhysics(), // フレンド以外はスワイプ禁止
-            // ▲▲▲
             controller: _tabController,
             children: [
-              // 1. ステータスタブ (常に表示)
               ProfileStatsTab(
                 userProfile: userProfile,
                 level: level,
                 jobInfo: jobInfo,
                 isMyProfile: _isMyProfile,
                 onEditPicture: _updateProfilePicture,
+                // ▼▼▼ パラメータを追加 ▼▼▼
+                showXpAnimation: widget.showXpAnimation,
+                // ▲▲▲
               ),
-              // 2. 投稿タブ (条件付き表示)
               canViewPrivateTabs
                   ? ProfilePostsTab(userId: widget.userId)
                   : const _LockedTabPlaceholder(message: 'フレンドになると投稿を閲覧できます。'),
-
-              // 3. マイクエストタブ (条件付き表示)
               canViewPrivateTabs
                   ? ProfileMyQuestsTab(userId: widget.userId)
                   : const _LockedTabPlaceholder(
@@ -273,7 +275,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 }
 
-// ▼▼▼ ロック中タブの中身 (新規追加) ▼▼▼
 class _LockedTabPlaceholder extends StatelessWidget {
   final String message;
   const _LockedTabPlaceholder({required this.message});
@@ -302,4 +303,3 @@ class _LockedTabPlaceholder extends StatelessWidget {
     );
   }
 }
-// ▲▲▲

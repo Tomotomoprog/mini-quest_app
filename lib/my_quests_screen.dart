@@ -6,11 +6,13 @@ import 'models/my_quest.dart';
 import 'create_my_quest_screen.dart';
 import 'my_quest_detail_screen.dart';
 import 'my_quest_post_screen.dart';
+import 'models/user_profile.dart';
+import 'profile_screen.dart';
+import 'motivation_columns_screen.dart'; // ◀◀◀ 追加: コラム画面をインポート
 
 class MyQuestsScreen extends StatelessWidget {
   const MyQuestsScreen({super.key});
 
-  // カテゴリごとのアイコンを取得
   IconData _getIconForCategory(String category) {
     switch (category) {
       case 'Life':
@@ -30,7 +32,6 @@ class MyQuestsScreen extends StatelessWidget {
     }
   }
 
-  // カテゴリごとの色を取得
   Color _getColorForCategory(String category) {
     switch (category) {
       case 'Life':
@@ -50,7 +51,6 @@ class MyQuestsScreen extends StatelessWidget {
     }
   }
 
-  // カテゴリの定義順
   final List<String> categoryOrder = const [
     'Life',
     'Study',
@@ -73,12 +73,27 @@ class MyQuestsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('MiniQuest'),
+        // ▼▼▼ 追加: コラム画面への遷移ボタン ▼▼▼
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.menu_book),
+            tooltip: '冒険の書（コラム）',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const MotivationColumnsScreen(),
+                ),
+              );
+            },
+          ),
+        ],
+        // ▲▲▲
       ),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ▼▼▼ 2つのアクションボタン ▼▼▼
+            // --- アクションボタン群 ---
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
               child: Row(
@@ -86,7 +101,7 @@ class MyQuestsScreen extends StatelessWidget {
                   Expanded(
                     child: _ActionButton(
                       icon: Icons.add,
-                      label: '新規作成',
+                      label: '長期目標の設定',
                       color: primaryAccent,
                       onTap: () {
                         Navigator.of(context).push(MaterialPageRoute(
@@ -111,9 +126,6 @@ class MyQuestsScreen extends StatelessWidget {
                 ],
               ),
             ),
-            // ▲▲▲
-
-            // ▼▼▼ 「今日頑張ったことを一言で！」ボタン ▼▼▼
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
               child: _ActionButton(
@@ -128,31 +140,33 @@ class MyQuestsScreen extends StatelessWidget {
                 },
               ),
             ),
-            // ▲▲▲
 
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
               child: Text(
-                'マイクエスト一覧', // ◀◀◀ タイトルを変更しました
+                'マイクエスト一覧',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
               ),
             ),
 
-            // ▼▼▼ クエスト一覧 (全ステータス取得) ▼▼▼
+            // --- クエスト一覧 ---
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('my_quests')
-                  .where('uid', isEqualTo: user.uid)
+                  .where(
+                    Filter.or(
+                      Filter('uid', isEqualTo: user.uid),
+                      Filter('participantIds', arrayContains: user.uid),
+                    ),
+                  )
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                // データがなくてもエラーではないので、空のリストとして処理を進める
-                // if (!snapshot.hasData) ... のエラー表示は削除し、下流で空状態を処理
 
                 final Map<String, List<MyQuest>> activeQuestsMap = {};
                 final Map<String, List<MyQuest>> completedQuestsMap = {};
@@ -165,7 +179,6 @@ class MyQuestsScreen extends StatelessWidget {
                 if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
                   for (var doc in snapshot.data!.docs) {
                     final quest = MyQuest.fromFirestore(doc);
-
                     if (!activeQuestsMap.containsKey(quest.category)) continue;
 
                     if (quest.status == 'completed') {
@@ -181,7 +194,6 @@ class MyQuestsScreen extends StatelessWidget {
                     final activeList = activeQuestsMap[category]!;
                     final completedList = completedQuestsMap[category]!;
 
-                    // ▼▼▼ 修正: クエストが空でもカードを表示する ▼▼▼
                     return _CategoryExpansionCard(
                       categoryName: category,
                       activeQuests: activeList,
@@ -189,7 +201,6 @@ class MyQuestsScreen extends StatelessWidget {
                       icon: _getIconForCategory(category),
                       color: _getColorForCategory(category),
                     );
-                    // ▲▲▲
                   }).toList(),
                 );
               },
@@ -202,7 +213,6 @@ class MyQuestsScreen extends StatelessWidget {
   }
 }
 
-// アクションボタン
 class _ActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -210,6 +220,7 @@ class _ActionButton extends StatelessWidget {
   final VoidCallback onTap;
 
   const _ActionButton({
+    super.key,
     required this.icon,
     required this.label,
     required this.color,
@@ -254,7 +265,6 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
-// ▼▼▼ カテゴリごとの折りたたみ式カード ▼▼▼
 class _CategoryExpansionCard extends StatelessWidget {
   final String categoryName;
   final List<MyQuest> activeQuests;
@@ -270,7 +280,7 @@ class _CategoryExpansionCard extends StatelessWidget {
     required this.color,
   });
 
-  Widget _buildTotalCheerCount(String myQuestId) {
+  Widget _buildQuestStats(String myQuestId) {
     return FutureBuilder<QuerySnapshot>(
       future: FirebaseFirestore.instance
           .collection('posts')
@@ -283,21 +293,46 @@ class _CategoryExpansionCard extends StatelessWidget {
               height: 12,
               child: CircularProgressIndicator(strokeWidth: 2));
         }
+
         int totalCheers = 0;
+        double totalHours = 0.0;
+
         if (snapshot.data != null) {
           for (var doc in snapshot.data!.docs) {
             final data = doc.data() as Map<String, dynamic>;
             final likeCount = data['likeCount'] as num? ?? 0;
             totalCheers += likeCount.toInt();
+            final timeSpent = data['timeSpentHours'] as num? ?? 0.0;
+            totalHours += timeSpent.toDouble();
           }
         }
-        return Text(
-          totalCheers.toString(),
-          style: TextStyle(
-            color: Colors.pink[200],
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.local_fire_department,
+                color: Colors.pink[200], size: 16),
+            const SizedBox(width: 4),
+            Text(
+              '$totalCheers',
+              style: TextStyle(
+                color: Colors.pink[200],
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Icon(Icons.timer_outlined, color: Colors.orange[300], size: 16),
+            const SizedBox(width: 4),
+            Text(
+              '${totalHours.toStringAsFixed(1)}h',
+              style: TextStyle(
+                color: Colors.orange[300],
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ],
         );
       },
     );
@@ -317,7 +352,6 @@ class _CategoryExpansionCard extends StatelessWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(
-            // 空の場合は枠線を薄く、通常時はカテゴリ色
             color: isEmpty ? Colors.grey[800]! : color.withOpacity(0.5),
             width: 1,
           ),
@@ -369,7 +403,7 @@ class _CategoryExpansionCard extends StatelessWidget {
                         return _MyQuestCard(
                           quest: quest,
                           color: color,
-                          totalCheerWidget: _buildTotalCheerCount(quest.id),
+                          statsWidget: _buildQuestStats(quest.id),
                         );
                       }),
                     if (completedQuests.isNotEmpty) ...[
@@ -406,7 +440,7 @@ class _CategoryExpansionCard extends StatelessWidget {
                           quest: quest,
                           color: color,
                           isCompletedSection: true,
-                          totalCheerWidget: _buildTotalCheerCount(quest.id),
+                          statsWidget: _buildQuestStats(quest.id),
                         );
                       }),
                     ],
@@ -421,13 +455,13 @@ class _CategoryExpansionCard extends StatelessWidget {
 class _MyQuestCard extends StatelessWidget {
   final MyQuest quest;
   final Color color;
-  final Widget totalCheerWidget;
+  final Widget statsWidget;
   final bool isCompletedSection;
 
   const _MyQuestCard({
     required this.quest,
     required this.color,
-    required this.totalCheerWidget,
+    required this.statsWidget,
     this.isCompletedSection = false,
   });
 
@@ -467,6 +501,14 @@ class _MyQuestCard extends StatelessWidget {
           children: [
             Row(
               children: [
+                if (quest.type != 'personal') ...[
+                  Icon(
+                    quest.type == 'battle' ? Icons.emoji_events : Icons.group,
+                    size: 16,
+                    color: Colors.orangeAccent,
+                  ),
+                  const SizedBox(width: 4),
+                ],
                 Expanded(
                   child: Text(
                     quest.title,
@@ -489,10 +531,7 @@ class _MyQuestCard extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: [
-                Icon(Icons.local_fire_department,
-                    color: Colors.pink[200], size: 16),
-                const SizedBox(width: 4),
-                totalCheerWidget,
+                statsWidget,
                 const Spacer(),
                 if (isCompletedSection)
                   Container(

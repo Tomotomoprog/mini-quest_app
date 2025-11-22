@@ -65,9 +65,8 @@ class UserProfile {
   final String? photoURL;
   final String? accountName;
   final String? bio;
-  // ▼▼▼ 追加: キャラクターアバターの画像パス ▼▼▼
   final String? characterImage;
-  // ▲▲▲
+  final String selectedJob;
   final int xp;
   final UserStats stats;
   final Avatar? avatar;
@@ -77,6 +76,9 @@ class UserProfile {
   final int longestStreak;
   final Timestamp? lastPostDate;
   final String? title;
+  // ▼▼▼ 追加: チュートリアル完了フラグ ▼▼▼
+  final bool isTutorialCompleted;
+  // ▲▲▲
 
   UserProfile({
     required this.uid,
@@ -84,9 +86,8 @@ class UserProfile {
     this.photoURL,
     this.accountName,
     this.bio,
-    // ▼▼▼ 追加 ▼▼▼
     this.characterImage,
-    // ▲▲▲
+    this.selectedJob = '見習い',
     required this.xp,
     required this.stats,
     this.avatar,
@@ -96,6 +97,9 @@ class UserProfile {
     required this.longestStreak,
     this.lastPostDate,
     this.title,
+    // ▼▼▼ 追加 (デフォルトは false) ▼▼▼
+    this.isTutorialCompleted = false,
+    // ▲▲▲
   });
 
   factory UserProfile.fromFirestore(DocumentSnapshot doc) {
@@ -115,9 +119,8 @@ class UserProfile {
       photoURL: data['photoURL'],
       accountName: data['accountName'],
       bio: data['bio'],
-      // ▼▼▼ 追加 ▼▼▼
       characterImage: data['characterImage'],
-      // ▲▲▲
+      selectedJob: (data['selectedJob'] as String?) ?? '見習い',
       xp: data['xp'] ?? 0,
       stats: UserStats.fromMap(data['stats'] ?? {}),
       avatar:
@@ -128,6 +131,9 @@ class UserProfile {
       longestStreak: data['longestStreak'] ?? 0,
       lastPostDate: data['lastPostDate'],
       title: data['title'],
+      // ▼▼▼ 追加: 読み込み処理 (ない場合は false) ▼▼▼
+      isTutorialCompleted: data['isTutorialCompleted'] ?? false,
+      // ▲▲▲
     );
   }
 }
